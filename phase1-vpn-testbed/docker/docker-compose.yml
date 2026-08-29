@@ -1,0 +1,31 @@
+version: '3.8'
+
+services:
+  # StrongSwan VPN Server
+  strongswan-server:
+    build: ./strongswan
+    container_name: strongswan-vpn-server
+    privileged: true
+    network_mode: host
+    volumes:
+      - ./strongswan/ipsec.conf:/etc/strongswan/ipsec.conf
+      - ./strongswan/ipsec.secrets:/etc/strongswan/ipsec.secrets
+      - ./strongswan/strongswan.conf:/etc/strongswan/strongswan.conf
+      - /lib/modules:/lib/modules:ro
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+      - SYS_ADMIN
+    restart: unless-stopped
+
+  # Traffic Generator Client
+  client:
+    build: ./client
+    container_name: vpn-client
+    network_mode: host
+    privileged: true
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    command: sleep infinity
+    restart: unless-stopped
