@@ -1,0 +1,44 @@
+{
+  "Random Forest": {
+    "accuracy": 0.5,
+    "precision": 0.47619047619047616,
+    "recall": 0.5,
+    "f1_score": 0.4835164835164836,
+    "train_time": 0.3937349319458008
+  },
+  "Decision Tree": {
+    "accuracy": 0.6,
+    "precision": 0.575,
+    "recall": 0.6,
+    "f1_score": 0.5619047619047619,
+    "train_time": 0.004761695861816406
+  },
+  "Logistic Regression": {
+    "accuracy": 0.6,
+    "precision": 0.575,
+    "recall": 0.6,
+    "f1_score": 0.5619047619047619,
+    "train_time": 0.032523155212402344
+  },
+  "SVM": {
+    "accuracy": 0.6,
+    "precision": 0.36,
+    "recall": 0.6,
+    "f1_score": 0.45,
+    "train_time": 0.010775089263916016
+  },
+  "K-Nearest Neighbors": {
+    "accuracy": 0.5,
+    "precision": 0.33333333333333337,
+    "recall": 0.5,
+    "f1_score": 0.4,
+    "train_time": 0.010137081146240234
+  },
+  "Gradient Boosting": {
+    "accuracy": 0.4,
+    "precision": 0.3,
+    "recall": 0.4,
+    "f1_score": 0.34285714285714286,
+    "train_time": 0.18657398223876953
+  }
+}
