@@ -1,5 +1,5 @@
 # Unified Cyber Defense Platform
-## SIH26153 + SIH26160
+
 
 ### Phase 1: VPN Testbed Setup
 
