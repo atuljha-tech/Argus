@@ -1,0 +1,31 @@
+{
+  "file_name": "../phase1-vpn-testbed/capture/pcap_store/http-sample.pcap",
+  "total_packets": 3,
+  "ike_packets": 1,
+  "esp_packets": 1,
+  "connections": [
+    {
+      "connection_name": "VPN-1",
+      "ike_version": "IKEv2",
+      "encryption": "AES-256-GCM",
+      "authentication": "Unknown",
+      "dh_group": "DH-2048",
+      "pfs_enabled": false,
+      "security_assessment": {
+        "encryption_algorithm": "AES-256-GCM",
+        "authentication_algorithm": "Unknown",
+        "key_exchange": "DH (PFS disabled)",
+        "perfect_forward_secrecy": false,
+        "key_lifetime": "24h",
+        "security_score": 85,
+        "issues": [
+          "Perfect Forward Secrecy (PFS) is not enabled"
+        ],
+        "recommendations": [
+          "Enable PFS using ECDH or DH groups"
+        ]
+      }
+    }
+  ],
+  "summary": "VPN Analysis: AES-256-GCM encryption, Unknown authentication, PFS: Disabled ❌"
+}

@@ -1,0 +1,31 @@
+============================================================
+📄 File: ../phase1-vpn-testbed/capture/pcap_store/http-sample.pcap
+📊 Total packets: 3
+🔐 IKE packets: 1
+🔒 ESP packets: 1
+
+📋 Summary:
+   VPN Analysis: AES-256-GCM encryption, Unknown authentication, PFS: Disabled ❌
+
+============================================================
+🔒 CONNECTION DETAILS
+============================================================
+
+🔗 Connection: VPN-1
+   IKE Version: IKEv2
+   Encryption: AES-256-GCM
+   Authentication: Unknown
+   DH Group: DH-2048
+   PFS Enabled: false
+
+   🛡️ SECURITY ASSESSMENT:
+      Security Score: 85/100
+      Encryption: AES-256-GCM
+      Authentication: Unknown
+      ⚠️ Issues:
+         - Perfect Forward Secrecy (PFS) is not enabled
+      💡 Recommendations:
+         - Enable PFS using ECDH or DH groups
+
+============================================================
+✅ Analysis complete!

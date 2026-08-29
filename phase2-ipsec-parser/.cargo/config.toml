@@ -1,0 +1,11 @@
+[build]
+rustflags = ["-C", "linker=/Users/it4/Desktop/unified-cyber-platform/phase2-ipsec-parser/zig-cc.sh", "-C", "target-cpu=native"]
+
+[target.x86_64-apple-darwin]
+linker = "/Users/it4/Desktop/unified-cyber-platform/phase2-ipsec-parser/zig-cc.sh"
+ar = "/Users/it4/Desktop/unified-cyber-platform/phase2-ipsec-parser/zig-ar.sh"
+
+[env]
+CC = "/Users/it4/Desktop/unified-cyber-platform/phase2-ipsec-parser/zig-cc.sh"
+CXX = "/Users/it4/Desktop/unified-cyber-platform/phase2-ipsec-parser/zig-cc.sh -xc++"
+AR = "/Users/it4/Desktop/unified-cyber-platform/phase2-ipsec-parser/zig-ar.sh"
