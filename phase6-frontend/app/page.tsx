@@ -146,7 +146,7 @@ export default function Home() {
                 </div>
               </div>
               <div className="bg-zinc-950/90 p-3 rounded border border-zinc-800">
-                <div className="text-[10px] text-zinc-500 uppercase">Agent</div>
+                <div className="text-[10px] text-zinc-500 uppercase">Stream</div>
                 <div className={`text-xs font-bold mt-1 flex items-center gap-1 ${liveConnected ? 'text-[#00ff87]' : 'text-zinc-500'}`}>
                   {liveConnected
                     ? <><Radio className="w-3 h-3 animate-pulse" /> LIVE</>
