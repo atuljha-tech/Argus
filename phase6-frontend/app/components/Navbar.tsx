@@ -28,7 +28,7 @@ export default function Navbar() {
             <div>
               <div className="flex items-center space-x-2">
                 <span className="text-lg font-black font-mono tracking-widest text-white uppercase">
-                  ARGUS<span className="text-[#00ff87]">//</span>DEFENSE
+                  ARGUS<span className="text-[#00ff87]">{"//"}</span>DEFENSE
                 </span>
                 <span className="px-2 py-0.5 text-[10px] font-mono font-bold tracking-wider text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 rounded uppercase">
                   ENTERPRISE SOC
@@ -68,5 +68,4 @@ export default function Navbar() {
     </header>
   );
 }
-
 
