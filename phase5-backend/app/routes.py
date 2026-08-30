@@ -16,7 +16,7 @@ from .models import (
     PredictionResponse,
     HealthResponse,
 )
-from .utils import ModelLoader, get_risk_level, get_attack_type
+from .utils import ModelLoader, get_risk_level, get_attack_display
 from .ws_manager import manager
 
 # ── Router & model ────────────────────────────────────────────────────────────
@@ -27,13 +27,20 @@ model_loaded = model_loader.load_models()
 
 # ── Pydantic models for ingest ────────────────────────────────────────────────
 class RawPacket(BaseModel):
-    src_port:  int   = 0
-    dst_port:  int   = 0
-    protocol:  int   = 0
-    length:    int   = 0
-    src_ip:    str   = ""
-    dst_ip:    str   = ""
-    timestamp: str   = ""
+    src_port:           int   = 0
+    dst_port:           int   = 0
+    protocol:           int   = 0
+    length:             int   = 0
+    src_ip:             str   = ""
+    dst_ip:             str   = ""
+    timestamp:          str   = ""
+    # flow-level fields populated by capture_and_train / agent flow aggregator
+    packet_count:       float = 1.0
+    byte_count:         float = 0.0
+    duration:           float = 1.0
+    avg_packet_size:    float = 0.0
+    bytes_per_second:   float = 0.0
+    packets_per_second: float = 0.0
 
 class IngestRequest(BaseModel):
     packets: List[RawPacket]
@@ -49,6 +56,12 @@ async def health_check():
     )
 
 
+@router.get("/model-info")
+async def model_info():
+    """Returns metadata about the currently loaded ML model."""
+    return model_loader.model_info()
+
+
 @router.post("/predict", response_model=PredictionResponse)
 async def predict(request: PredictionRequest):
     if not model_loaded:
@@ -60,12 +73,11 @@ async def predict(request: PredictionRequest):
             "protocol": request.features.protocol,
             "length":   request.features.length,
         }
-        prediction, confidence = model_loader.predict(features)
+        prediction, confidence, attack_type = model_loader.predict(features)
         risk_level  = get_risk_level(prediction, confidence)
-        attack_type = get_attack_type(prediction)
         return PredictionResponse(
             prediction=int(prediction),
-            attack_type=attack_type,
+            attack_type=get_attack_display(attack_type),
             confidence=confidence,
             risk_level=risk_level,
             timestamp=datetime.now().isoformat()
@@ -85,19 +97,17 @@ async def analyze_traffic(features: Dict[str, Any]):
             "protocol": features.get("protocol", 0),
             "length":   features.get("length",   0),
         }
-        prediction, confidence = model_loader.predict(feature_data)
+        prediction, confidence, attack_type = model_loader.predict(feature_data)
         risk_level  = get_risk_level(prediction, confidence)
-        attack_type = get_attack_type(prediction)
         result = {
             "prediction":      int(prediction),
-            "attack_type":     attack_type,
+            "attack_type":     get_attack_display(attack_type),
             "confidence":      confidence,
             "risk_level":      risk_level,
             "features":        feature_data,
             "timestamp":       datetime.now().isoformat(),
             "recommendations": _recommendations(prediction, risk_level),
         }
-        # Also broadcast manual analyses to live WebSocket clients
         await manager.broadcast({"type": "analysis", **result})
         return result
     except Exception as e:
@@ -119,25 +129,30 @@ async def ingest_packets(body: IngestRequest):
     for pkt in body.packets:
         try:
             features = {
-                "src_port": pkt.src_port,
-                "dst_port": pkt.dst_port,
-                "protocol": pkt.protocol,
-                "length":   pkt.length,
+                "src_port":  pkt.src_port,
+                "dst_port":  pkt.dst_port,
+                "protocol":  pkt.protocol,
+                "length":    pkt.length,
+                "packet_count":       getattr(pkt, "packet_count", 1),
+                "byte_count":         getattr(pkt, "byte_count",   pkt.length),
+                "duration":           getattr(pkt, "duration",     1.0),
+                "avg_packet_size":    getattr(pkt, "avg_packet_size",    pkt.length),
+                "bytes_per_second":   getattr(pkt, "bytes_per_second",   0.0),
+                "packets_per_second": getattr(pkt, "packets_per_second", 0.0),
             }
-            prediction, confidence = model_loader.predict(features)
+            prediction, confidence, attack_type = model_loader.predict(features)
             risk_level  = get_risk_level(prediction, confidence)
-            attack_type = get_attack_type(prediction)
 
             result = {
-                "type":           "live_packet",
-                "prediction":     int(prediction),
-                "attack_type":    attack_type,
-                "confidence":     confidence,
-                "risk_level":     risk_level,
-                "features":       features,
-                "src_ip":         pkt.src_ip,
-                "dst_ip":         pkt.dst_ip,
-                "timestamp":      pkt.timestamp or datetime.now().isoformat(),
+                "type":            "live_packet",
+                "prediction":      int(prediction),
+                "attack_type":     get_attack_display(attack_type),
+                "confidence":      confidence,
+                "risk_level":      risk_level,
+                "features":        features,
+                "src_ip":          pkt.src_ip,
+                "dst_ip":          pkt.dst_ip,
+                "timestamp":       pkt.timestamp or datetime.now().isoformat(),
                 "recommendations": _recommendations(prediction, risk_level),
             }
             results.append(result)

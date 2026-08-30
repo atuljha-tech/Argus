@@ -119,7 +119,7 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
         </div>
       </div>
 
-      {/* Feature Grid */}
+        /* Feature Grid */
       <div className="mb-6">
         <h5 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
           <Activity className="w-3.5 h-3.5 text-[#00ff87]" />
@@ -137,12 +137,12 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
           <div className="bg-zinc-950 p-3 rounded border border-zinc-800">
             <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Protocol</span>
             <div className="text-sm font-bold text-[#00ff87] mt-0.5">
-              {result.features.protocol} ({result.features.protocol === 17 ? 'UDP' : result.features.protocol === 6 ? 'TCP' : 'IP'})
+              {result.features.protocol} ({result.features.protocol === 17 ? 'UDP' : result.features.protocol === 6 ? 'TCP' : result.features.protocol === 50 ? 'ESP' : 'IP'})
             </div>
           </div>
           <div className="bg-zinc-950 p-3 rounded border border-zinc-800">
             <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Length</span>
-            <div className="text-sm font-bold text-white mt-0.5">{result.features.length} Bytes</div>
+            <div className="text-sm font-bold text-white mt-0.5">{result.features.length} B</div>
           </div>
         </div>
       </div>

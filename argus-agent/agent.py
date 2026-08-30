@@ -2,187 +2,246 @@
 """
 ARGUS Live Capture Agent
 ========================
-Runs on your Mac, sniffs real packets off the active NIC,
-extracts features from each packet, and POSTs them to the
-deployed FastAPI backend via /api/v1/ingest  (new endpoint).
+Works on ANY machine — auto-detects the active interface.
+Captures real packets, aggregates them into 2-second flow windows,
+extracts 10 features (matching the production ML schema), then
+POSTs to the backend /api/v1/ingest endpoint.
+
+The backend runs ML inference on each flow and broadcasts results
+via WebSocket to the Vercel frontend in real time.
 
 Usage:
-  sudo python3 agent.py                        # auto-detect interface
-  sudo python3 agent.py --iface en0            # explicit interface
-  sudo python3 agent.py --iface en0 --rate 2   # send every 2 s
+    sudo python3 agent.py                        # auto-detect interface
+    sudo python3 agent.py --iface en0            # force interface
+    sudo python3 agent.py --iface en0 --rate 1   # flush every 1 second
+    sudo python3 agent.py --filter "tcp or udp"  # custom BPF
 
-Requires:
-  pip install scapy requests
-  Run with sudo (raw socket capture needs root on macOS)
+Requirements:
+    pip install scapy requests
 """
 
 import argparse
 import json
 import socket
-import time
+import subprocess
+import sys
 import threading
-from collections import deque
+import time
+from collections import defaultdict
 from datetime import datetime
 
 import requests
 
-# ── Try to import scapy — friendly error if missing ──────────────────────────
 try:
-    from scapy.all import sniff, IP, TCP, UDP, conf
+    from scapy.all import sniff, IP, TCP, UDP, conf as scapy_conf, get_if_list
 except ImportError:
-    print("❌  scapy not installed.  Run:  pip install scapy")
-    raise SystemExit(1)
+    print("❌  pip install scapy")
+    sys.exit(1)
 
 # ─────────────────────────────────────────────────────────────────────────────
-BACKEND_URL = "https://argus-backend-kbg6.onrender.com/api/v1"
-INGEST_URL  = f"{BACKEND_URL}/ingest"
-BATCH_SIZE  = 10          # packets bundled per request
-FLUSH_EVERY = 2.0         # seconds between flushes (even if batch not full)
+BACKEND_URL  = "https://argus-backend-kbg6.onrender.com/api/v1"
+INGEST_URL   = f"{BACKEND_URL}/ingest"
+FLUSH_EVERY  = 2.0          # seconds between POST batches
+WINDOW_SECS  = 2.0          # flow-aggregation window = same as flush
+MAX_BATCH    = 50           # cap packets per POST to avoid timeout
 # ─────────────────────────────────────────────────────────────────────────────
 
 
-def get_default_iface() -> str:
-    """Return the first non-loopback interface that has an IP (en0, en1 …)."""
+# ── Interface auto-detection ──────────────────────────────────────────────────
+def detect_interface() -> str:
+    """
+    Returns the best available non-loopback network interface.
+    Works on macOS and Linux without root for detection.
+    """
+    # 1. Try scapy's own best-interface guess
     try:
-        # scapy's conf.iface is usually the right one
-        return conf.iface
+        iface = str(scapy_conf.iface)
+        if iface and iface != "lo" and iface != "lo0":
+            return iface
     except Exception:
-        return "en0"
+        pass
+
+    # 2. macOS: use route to find default interface
+    try:
+        out = subprocess.check_output(
+            ["route", "-n", "get", "default"], stderr=subprocess.DEVNULL
+        ).decode()
+        for line in out.splitlines():
+            if "interface:" in line:
+                iface = line.split()[-1].strip()
+                if iface:
+                    return iface
+    except Exception:
+        pass
+
+    # 3. Linux: ip route
+    try:
+        out = subprocess.check_output(
+            ["ip", "route", "show", "default"], stderr=subprocess.DEVNULL
+        ).decode()
+        parts = out.split()
+        if "dev" in parts:
+            return parts[parts.index("dev") + 1]
+    except Exception:
+        pass
+
+    # 4. Fallback: first non-loopback from scapy list
+    try:
+        for iface in get_if_list():
+            if iface not in ("lo", "lo0"):
+                return iface
+    except Exception:
+        pass
+
+    return "en0"   # last resort
 
 
-def extract_features(pkt) -> dict | None:
+# ── Flow-window aggregator ────────────────────────────────────────────────────
+class FlowAggregator:
     """
-    Pull the 4 core features the ML model was trained on from a scapy packet.
-    Returns None for packets we can't parse.
+    Groups incoming packets by (src_ip, dst_ip, src_port, dst_port, proto)
+    within WINDOW_SECS buckets and produces flow records with 10 features.
     """
-    if not pkt.haslayer(IP):
-        return None
-
-    ip   = pkt[IP]
-    proto = ip.proto          # 6=TCP, 17=UDP, 50=ESP, etc.
-    length = len(pkt)
-
-    src_port = 0
-    dst_port = 0
-
-    if pkt.haslayer(TCP):
-        src_port = pkt[TCP].sport
-        dst_port = pkt[TCP].dport
-    elif pkt.haslayer(UDP):
-        src_port = pkt[UDP].sport
-        dst_port = pkt[UDP].dport
-
-    return {
-        "src_port": src_port,
-        "dst_port": dst_port,
-        "protocol": proto,
-        "length":   length,
-        # extra meta — shown on dashboard, not fed to model
-        "src_ip":   ip.src,
-        "dst_ip":   ip.dst,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-    }
-
-
-class AgentState:
-    """Thread-safe packet buffer + stats."""
 
     def __init__(self):
-        self.buffer: deque[dict] = deque()
-        self.lock = threading.Lock()
-        self.sent   = 0
-        self.dropped = 0
+        self._flows: dict = defaultdict(list)
+        self._lock = threading.Lock()
 
-    def add(self, pkt_features: dict):
-        with self.lock:
-            self.buffer.append(pkt_features)
+    def add(self, pkt):
+        if not pkt.haslayer(IP):
+            return
+        ip     = pkt[IP]
+        proto  = ip.proto
+        length = len(pkt)
+        ts     = float(pkt.time)
+        sport  = pkt[TCP].sport if pkt.haslayer(TCP) else (pkt[UDP].sport if pkt.haslayer(UDP) else 0)
+        dport  = pkt[TCP].dport if pkt.haslayer(TCP) else (pkt[UDP].dport if pkt.haslayer(UDP) else 0)
+
+        bucket = int(ts // WINDOW_SECS)
+        key    = (ip.src, ip.dst, sport, dport, proto, bucket)
+
+        with self._lock:
+            self._flows[key].append((ts, length))
 
     def drain(self) -> list[dict]:
-        with self.lock:
-            items = list(self.buffer)
-            self.buffer.clear()
-            return items
+        """Returns list of flow-feature dicts and clears the buffer."""
+        with self._lock:
+            flows = dict(self._flows)
+            self._flows.clear()
+
+        records = []
+        for (src_ip, dst_ip, sport, dport, proto, _bucket), pkts in flows.items():
+            if not pkts:
+                continue
+            timestamps = [p[0] for p in pkts]
+            lengths    = [p[1] for p in pkts]
+            n          = len(pkts)
+            byte_total = sum(lengths)
+            duration   = max(max(timestamps) - min(timestamps), 0.001)
+
+            records.append({
+                "src_ip":             src_ip,
+                "dst_ip":             dst_ip,
+                "src_port":           sport,
+                "dst_port":           dport,
+                "protocol":           proto,
+                "length":             int(sum(lengths) / n),   # avg pkt size
+                "packet_count":       float(n),
+                "byte_count":         float(byte_total),
+                "duration":           float(duration),
+                "avg_packet_size":    float(byte_total / n),
+                "bytes_per_second":   float(byte_total / duration),
+                "packets_per_second": float(n / duration),
+                "timestamp":          datetime.utcnow().isoformat() + "Z",
+            })
+
+        return records
 
 
-state = AgentState()
+# ── Global state ──────────────────────────────────────────────────────────────
+aggregator   = FlowAggregator()
+stats        = {"sent": 0, "dropped": 0, "flows": 0}
 
 
-# ── Packet callback (runs in scapy's capture thread) ─────────────────────────
 def packet_callback(pkt):
-    features = extract_features(pkt)
-    if features:
-        state.add(features)
+    aggregator.add(pkt)
 
 
-# ── Flush thread — batches up captured packets and ships to backend ───────────
-def flush_loop():
+# ── Flush thread ──────────────────────────────────────────────────────────────
+def flush_loop(flush_every: float):
     session = requests.Session()
     session.headers.update({"Content-Type": "application/json"})
-
-    print(f"📡  Flush loop started → {INGEST_URL}")
+    print(f"📡  Flush loop → {INGEST_URL}  (every {flush_every}s)")
 
     while True:
-        time.sleep(FLUSH_EVERY)
-        batch = state.drain()
-        if not batch:
+        time.sleep(flush_every)
+        flows = aggregator.drain()
+        if not flows:
             continue
 
-        payload = {"packets": batch}
+        # Cap batch size
+        batch  = flows[:MAX_BATCH]
+        payload = json.dumps({"packets": batch})
+
         try:
-            r = session.post(INGEST_URL, data=json.dumps(payload), timeout=8)
+            r = session.post(INGEST_URL, data=payload, timeout=10)
             if r.status_code == 200:
-                state.sent += len(batch)
-                print(f"  ✅ Sent {len(batch)} packets  "
-                      f"(total: {state.sent})  "
-                      f"[{datetime.now().strftime('%H:%M:%S')}]")
+                stats["sent"]  += len(batch)
+                stats["flows"] += len(batch)
+                print(f"  ✅ [{datetime.now().strftime('%H:%M:%S')}]  "
+                      f"+{len(batch)} flows  (total: {stats['sent']})")
             else:
-                print(f"  ⚠️  Backend returned {r.status_code}: {r.text[:120]}")
-                state.dropped += len(batch)
-        except requests.exceptions.RequestException as e:
-            print(f"  ❌ POST failed: {e}")
-            state.dropped += len(batch)
+                print(f"  ⚠️  Backend {r.status_code}: {r.text[:100]}")
+                stats["dropped"] += len(batch)
+        except requests.exceptions.RequestException as exc:
+            print(f"  ❌ POST failed: {exc}")
+            stats["dropped"] += len(batch)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="ARGUS Live Capture Agent")
-    parser.add_argument("--iface", default=None,
-                        help="Network interface to sniff (default: auto-detect)")
-    parser.add_argument("--rate", type=float, default=FLUSH_EVERY,
+    parser.add_argument("--iface",  default=None,
+                        help="Network interface (default: auto-detect)")
+    parser.add_argument("--rate",   type=float, default=FLUSH_EVERY,
                         help="Seconds between backend flushes (default: 2)")
     parser.add_argument("--filter", default="ip",
-                        help="BPF filter string (default: 'ip')")
+                        help="BPF capture filter (default: 'ip')")
     args = parser.parse_args()
 
-    iface = args.iface or get_default_iface()
+    iface = args.iface or detect_interface()
 
-    print("=" * 55)
+    print("=" * 57)
     print("  ARGUS LIVE CAPTURE AGENT")
-    print("=" * 55)
-    print(f"  Interface : {iface}")
-    print(f"  BPF filter: {args.filter}")
-    print(f"  Flush rate: every {args.rate}s")
-    print(f"  Backend   : {BACKEND_URL}")
-    print("=" * 55)
+    print("=" * 57)
+    print(f"  Interface  : {iface}")
+    print(f"  BPF filter : {args.filter}")
+    print(f"  Flush rate : every {args.rate}s")
+    print(f"  Backend    : {BACKEND_URL}")
+    print(f"  Host       : {socket.gethostname()}")
+    print("=" * 57)
+    print("  Packets → flows → ML inference → WebSocket → dashboard")
     print("  Ctrl+C to stop\n")
 
-    # Start flush thread (daemon so it dies with main)
-    t = threading.Thread(target=flush_loop, daemon=True)
+    # Start flush thread
+    t = threading.Thread(target=flush_loop, args=(args.rate,), daemon=True)
     t.start()
 
-    # Start packet capture (blocking — runs until Ctrl+C)
+    # Start capture (blocking)
     try:
         sniff(
             iface=iface,
             filter=args.filter,
             prn=packet_callback,
-            store=False,       # don't keep packets in RAM
+            store=False,
         )
     except KeyboardInterrupt:
-        print(f"\n\n  Stopped.  Sent: {state.sent}  Dropped: {state.dropped}")
+        print(f"\n\n  Stopped.  Flows sent: {stats['sent']}  "
+              f"Dropped: {stats['dropped']}")
     except PermissionError:
         print("\n❌  Permission denied — run with sudo:\n"
               "       sudo python3 agent.py")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
