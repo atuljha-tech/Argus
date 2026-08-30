@@ -1,401 +1,301 @@
-# 🛡️ Unified Cyber Defense Platform
+# ARGUS — Unified Cyber Defense Platform
 
-## An AI-Powered Security Intelligence System
+> **Real-time network packet capture → ML threat classification → live WebSocket dashboard**
 
----
-
-## 📖 Table of Contents
-
-* [Project Overview](#-project-overview)
-* [Problem Statement](#-problem-statement)
-* [Solution Architecture](#-solution-architecture)
-* [Key Features](#-key-features)
-* [Technology Stack](#-technology-stack)
-* [Project Phases](#-project-phases)
-* [Installation & Setup](#-installation--setup)
-* [Usage Guide](#-usage-guide)
-* [Team](#-team)
-* [Acknowledgments](#-acknowledgments)
+A full-stack security intelligence system that captures actual WiFi packets from any machine's NIC, classifies them with a trained Random Forest model, and streams results live to a Next.js dashboard — with AI-powered security analysis via Groq.
 
 ---
 
-## 🎯 Project Overview
+## Architecture Overview
 
-The **Unified Cyber Defense Platform** is a comprehensive security intelligence system developed for the **Smart India Hackathon 2026**. It combines two critical cybersecurity problem statements into a single, powerful solution:
-
-| Component                  | Problem Statement | Organization                                    |
-| -------------------------- | ----------------- | ----------------------------------------------- |
-| VPN Security Assessment    | **SIH26160**      | National Technical Research Organisation (NTRO) |
-| Network Attack Forecasting | **SIH26153**      | National Technical Research Organisation (NTRO) |
-
-### 🌟 The Big Idea
-
-> **"What if we could not only see if our VPN is secure, but also predict when someone might attack it?"**
-
-This platform does exactly that. It analyzes VPN configurations, identifies vulnerabilities, and uses AI to forecast potential attacks—all in one unified system.
-
----
-
-## 🔥 The Problem We're Solving
-
-### The Current Reality
-
-* Organizations spend billions on cybersecurity but remain vulnerable
-* VPN misconfigurations are the #1 cause of data breaches
-* Attackers are getting faster than human defenders can react
-* Security tools work in silos - they don't talk to each other
-
-### Our Solution
-
-| Problem                                         | How We Solve It                                         |
-| ----------------------------------------------- | ------------------------------------------------------- |
-| VPNs have weak encryption                       | Our tool detects weak configurations and suggests fixes |
-| Organizations don't know their security posture | We provide a security score (0-100)                     |
-| Attacks happen too fast                         | We predict attacks before they happen                   |
-| Security teams are overwhelmed                  | We prioritize vulnerabilities by risk level             |
-
----
-
-## 🏗️ Solution Architecture
-
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│                     UNIFIED CYBER DEFENSE PLATFORM              │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌─────────────────────┐      ┌─────────────────────┐           │
-│  │    PHASE 1-2        │      │    PHASE 3-4        │           │
-│  │  VPN Traffic Analyzer│      │  AI Attack Forecaster│         │
-│  │  [SIH26160]         │      │  [SIH26153]         │           │
-│  │                     │      │                     │           │
-│  │  • Reads PCAP files │      │  • Analyzes patterns │           │
-│  │  • Detects IKE/ESP  │      │  • Predicts attacks  │           │
-│  │  • Identifies crypto│      │  • Generates alerts  │           │
-│  │  • Scores security  │      │  • Confidence scores │           │
-│  └──────────┬──────────┘      └──────────┬──────────┘           │
-│             │                            │                      │
-│             └──────────┬─────────────────┘                      │
-│                        ▼                                        │
-│            ┌─────────────────────┐                              │
-│            │   PHASE 5-6         │                              │
-│            │  Intelligence Engine│                              │
-│            │                     │                              │
-│            │  • Correlates data  │                              │
-│            │  • Unified risk     │                              │
-│            │  • Recommendations  │                              │
-│            └─────────────────────┘                              │
-│                        │                                        │
-│                        ▼                                        │
-│            ┌─────────────────────┐                              │
-│            │   PHASE 7           │                              │
-│            │  Dashboard & Reports│                              │
-│            │                     │                              │
-│            │  • Real-time alerts │                              │
-│            │  • Visual analytics │                              │
-│            │  • Executive PDF    │                              │
-│            └─────────────────────┘                              │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        YOUR MACHINE (NIC)                           │
+│                                                                     │
+│  WiFi en0/en1  ──►  scapy sniff()  ──►  FlowAggregator            │
+│                         raw packets       (8s windows)             │
+│                                              │                     │
+│                          10 features per flow:                     │
+│                          src_port, dst_port, protocol, length,     │
+│                          packet_count, byte_count, duration,       │
+│                          avg_packet_size, bytes_per_second,        │
+│                          packets_per_second                        │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │  POST /api/v1/ingest  (every 8s)
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│               BACKEND  (FastAPI on Render)                          │
+│                                                                     │
+│  /ingest ──► ModelLoader.predict()                                 │
+│                   │                                                 │
+│              Random Forest (200 trees)                             │
+│              trained on real captured traffic                      │
+│                   │                                                 │
+│         Post-processing sanity gate                                │
+│         (overrides ML if features aren't actually anomalous)       │
+│                   │                                                 │
+│  prediction + confidence + attack_type + risk_level                │
+│                   │                                                 │
+│  ConnectionManager.broadcast() ──► all WebSocket clients          │
+│                                                                     │
+│  /ws  ──►  WebSocket endpoint (persistent, ping/pong keepalive)   │
+│  /health, /predict, /analyze, /model-info  (REST endpoints)       │
+└──────────────────────────────┬──────────────────────────────────────┘
+                               │  wss://  WebSocket push
+                               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│               FRONTEND  (Next.js 14 on Vercel)                      │
+│                                                                     │
+│  LiveStream.tsx                                                     │
+│    ├─ WebSocket auto-connects on page load                         │
+│    ├─ Scrolling packet log (time · src→dst · proto · size · label) │
+│    ├─ Source Stats table (IP · packets · bytes · threat% · protos) │
+│    └─ Summary cards (total pkts · bytes · unique IPs · threat rate)│
+│                                                                     │
+│  ThreatAnalytics.tsx  (4 live charts, Recharts)                    │
+│    ├─ Graph 1: Packet Flow Stream (area chart, benign vs threat)   │
+│    ├─ Graph 2: Attack Class Distribution (bar chart)               │
+│    ├─ Graph 3: Protocol Breakdown (donut — TCP/UDP/ESP)            │
+│    └─ Graph 4: Confidence & Latency (dual line chart)              │
+│    └─ Insight panels beneath each graph (update every 60s)        │
+│                                                                     │
+│  SecurityScore.tsx                                                  │
+│    └─ SVG ring gauge, driven by weighted threat rate               │
+│       Fetches real model metadata from /model-info                 │
+│                                                                     │
+│  AISecurityAnalyst.tsx  (floating bottom-right)                    │
+│    └─ Groq LLaMA/GPT-OSS streaming analysis of session stats      │
+│       Sections: posture · threats · protocols · IPs · VPN · recs  │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## ✨ Key Features
+## How Ingoing/Outgoing Packets Are Captured and Understood
 
-### 1. 🔐 VPN Security Assessment
+### What is a Packet?
 
-* Automatic detection of VPN encryption algorithms
-* Security scoring (0-100) based on configuration
-* Vulnerability identification (weak ciphers, no PFS)
-* Actionable recommendations for fixes
+Every time your Mac communicates over WiFi — loading a webpage, a background app syncing, DNS lookups, streaming video — your WiFi NIC (network interface card) sends and receives small units of data called **IP packets**. Each packet has a header containing:
 
-### 2. 🤖 AI-Powered Attack Forecasting
+- **Source IP** — who sent it (your machine or a remote server)
+- **Destination IP** — who receives it
+- **Protocol** — TCP (6) for reliable connections, UDP (17) for fast/lossy, ESP (50) for encrypted VPN tunnels
+- **Source/Destination Port** — which service (port 443 = HTTPS, port 53 = DNS, port 22 = SSH, etc.)
+- **Length** — how many bytes
 
-* Predicts attacks up to 24-72 hours in advance
-* Confidence scores for each prediction
-* Pattern recognition from network traffic
-* Early warning system for emerging threats
+### What ARGUS Does Step by Step
 
-### 3. 📊 Unified Intelligence Dashboard
+**Step 1 — Raw Capture** (`argus-agent/agent.py`)
 
-* Real-time alerts for critical issues
-* Visual threat matrix showing attack vectors
-* Executive reports (PDF/JSON)
-* Historical trend analysis
+`scapy` opens a raw socket on your NIC (`en0` for WiFi on macOS) and intercepts every IP packet passing through. This requires `sudo` because reading raw network frames is a privileged OS operation. The agent runs locally on your machine — it doesn't proxy or modify any traffic, only reads headers.
 
-### 4. 🛡️ Correlation Engine
+**Step 2 — Flow Aggregation** (`FlowAggregator`)
 
-* Connects VPN vulnerabilities to predicted attacks
-* Prioritized recommendations based on risk
-* Unified security score for the entire organization
+Individual packets are grouped into **flow windows** — 8-second buckets identified by the 5-tuple: `(src_ip, dst_ip, src_port, dst_port, protocol)`. Within each window, the agent computes:
 
----
+- `packet_count` — how many packets in this flow
+- `byte_count` — total bytes transferred
+- `duration` — time span of the flow
+- `avg_packet_size` — byte_count / packet_count
+- `bytes_per_second` — throughput
+- `packets_per_second` — rate
 
-## 💻 Technology Stack
+This converts millions of raw packets into meaningful **flow-level features** — the same representation used by professional network security tools like Zeek and Suricata.
 
-### Frontend
+**Step 3 — ML Inference** (FastAPI backend, `utils.py`)
 
-| Technology   | Purpose                         |
-| ------------ | ------------------------------- |
-| Next.js 14   | React framework with App Router |
-| TypeScript   | Type-safe JavaScript            |
-| Tailwind CSS | Utility-first styling           |
-| Recharts     | Data visualizations             |
-| Shadcn/ui    | Component library               |
+The 10 flow features are fed to a **Random Forest classifier** (200 decision trees) trained on real captured traffic from the same system. The model outputs:
 
-### Backend
+- `prediction`: 0 (benign) or 1 (threat)
+- `confidence`: probability 0–1
+- `attack_type`: benign / ddos / exfiltration / port_scan / vpn_exploit / suspicious
 
-| Technology | Purpose                       |
-| ---------- | ----------------------------- |
-| Rust       | High-performance PCAP parsing |
-| Python     | ML model training & inference |
-| FastAPI    | REST API & WebSocket          |
-| PostgreSQL | Configuration data            |
-| InfluxDB   | Time-series traffic data      |
+A **sanity gate** post-processes the ML output — if the model says "threat" but the actual feature values don't cross realistic anomaly thresholds (pps > 200 for DDoS, bps > 1 MB/s for exfiltration, etc.), it overrides to benign. This prevents a model trained on synthetic data from over-flagging normal home/office traffic.
 
-### AI/ML
+**Step 4 — WebSocket Broadcast** (`ws_manager.py`)
 
-| Technology   | Purpose                 |
-| ------------ | ----------------------- |
-| PyTorch      | Deep learning models    |
-| scikit-learn | Traditional ML          |
-| XGBoost      | Ensemble methods        |
-| LSTM         | Time-series forecasting |
+Every classified flow is immediately pushed via WebSocket to all connected browser clients. No polling — pure push-based real-time streaming.
 
-### Infrastructure
+**Step 5 — Live Dashboard** (Next.js frontend)
 
-| Technology     | Purpose                       |
-| -------------- | ----------------------------- |
-| Docker         | Containerization              |
-| Docker Compose | Multi-container orchestration |
-| Git            | Version control               |
+The browser receives each flow result as a JSON message and:
+- Appends it to the scrolling packet log
+- Updates source IP statistics
+- Feeds the 4 Recharts graphs
+- Recalculates the security score (exponentially weighted threat rate)
+
+**Step 6 — AI Analysis** (Groq API)
+
+When you click "AI SECURITY ANALYSIS", the full session statistics (total flows, threat %, attack types, top source IPs, protocol mix, avg confidence) are sent to Groq's `openai/gpt-oss-20b` model which streams back a structured security report with 7 sections: posture score, threat analysis, protocol security, IP analysis, VPN assessment, recommendations, and a plain-English conclusion.
 
 ---
 
-## 📋 Project Phases
+## Project Structure
 
-| Phase   | Focus                            | Duration | Key Deliverables                     |
-| ------- | -------------------------------- | -------- | ------------------------------------ |
-| Phase 1 | VPN Testbed & Traffic Generation | 4 days   | Docker VPN, PCAP files, CSV features |
-| Phase 2 | IPsec Packet Parsing             | 4 days   | Rust parser, Security reports        |
-| Phase 3 | Feature Engineering              | 3 days   | Clean datasets, Feature vectors      |
-| Phase 4 | ML Model Development             | 4 days   | Trained models, Predictions          |
-| Phase 5 | Backend API                      | 3 days   | FastAPI endpoints, Correlation       |
-| Phase 6 | Frontend Dashboard               | 4 days   | Next.js UI, Visualizations           |
-| Phase 7 | Testing & Deployment             | 2 days   | Demo video, Documentation            |
+```
+unified-cyber-platform/
+├── argus-agent/                  # Local packet capture agent (runs on your Mac)
+│   ├── agent.py                  # scapy capture → flow aggregation → POST to backend
+│   ├── capture_and_train.py      # Capture real traffic + train/save ML model
+│   └── requirements.txt
+│
+├── phase1-vpn-testbed/           # Original Docker StrongSwan VPN testbed
+│   ├── docker/                   # strongswan + client containers
+│   └── capture/                  # pcap capture scripts
+│
+├── phase2-ipsec-parser/          # Rust IPsec packet parser
+│   └── src/                      # parser.rs, crypto_analyzer.rs, types.rs
+│
+├── phase3-feature-engineering/   # Python feature extraction pipeline
+│   └── src/                      # data_loader, feature_engineer, data_labeler
+│
+├── phase4-ml-model/              # ML model training (scikit-learn)
+│   └── src/                      # model_trainer.py, data_loader.py
+│
+├── phase5-backend/               # FastAPI inference server
+│   ├── app/
+│   │   ├── main.py               # FastAPI app, CORS setup
+│   │   ├── routes.py             # /health /predict /analyze /ingest /ws /model-info
+│   │   ├── utils.py              # ModelLoader, predict(), sanity gate, attack labels
+│   │   ├── ws_manager.py         # WebSocket ConnectionManager (broadcast to all clients)
+│   │   └── models.py             # Pydantic request/response schemas
+│   ├── models/                   # Trained .pkl files (baked into Docker image)
+│   ├── Dockerfile
+│   └── requirements.txt
+│
+└── phase6-frontend/              # Next.js 14 dashboard (deployed on Vercel)
+    ├── app/
+    │   ├── page.tsx              # Main page, state management, mode toggle
+    │   └── components/
+    │       ├── LiveStream.tsx    # WebSocket consumer, packet log, source stats
+    │       ├── ThreatAnalytics.tsx # 4 live Recharts graphs + insight panels
+    │       ├── SecurityScore.tsx # SVG gauge + real model metadata
+    │       ├── AISecurityAnalyst.tsx # Groq streaming analysis drawer
+    │       ├── Navbar.tsx        # Live clock + real model name from /model-info
+    │       ├── ResultsDisplay.tsx # Last inference detail panel
+    │       └── PredictionForm.tsx # Manual packet entry form
+    ├── lib/api.ts                # axios client, API calls
+    └── types/index.ts            # TypeScript interfaces
+```
 
 ---
 
-## 🚀 Installation & Setup
+## ML Model Training
 
-### Prerequisites
-
-* Rust (1.70+)
-* Python (3.10+)
-* Docker & Docker Compose
-* Node.js (18+)
-* PostgreSQL
-
-### Quick Start
+The model is trained on **your own real traffic** using `capture_and_train.py`:
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/unified-cyber-platform.git
-cd unified-cyber-platform
-
-# Phase 1: Setup VPN Testbed
-cd phase1-vpn-testbed/docker
-docker compose build strongswan-server
-docker compose up -d strongswan-server
-
-# Phase 2: Run PCAP Parser
-cd ../../phase2-ipsec-parser
-cargo build --release
-cargo run -- \
-  --input ../phase1-vpn-testbed/capture/pcap_store/http-sample.pcap \
-  --output ./output
-
-# Phase 5: Start Backend
-cd ../phase5-backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload
-
-# Phase 6: Start Frontend
-cd ../phase6-frontend
-npm install
-npm run dev
+sudo python3 argus-agent/capture_and_train.py --iface en0 --duration 120
 ```
+
+This:
+1. Captures 120 seconds of real packets from en0
+2. Aggregates into flow windows with 10 features
+3. Labels with smart heuristics (no synthetic data by default):
+   - DDoS: `packets_per_second > 2× 90th percentile`
+   - Exfiltration: `bytes_per_second > 2× 90th percentile AND avg_packet_size > 80th percentile`
+   - Port scan: `packet_count > 90th percentile AND avg_packet_size < 100 bytes`
+   - VPN exploit: IPsec ports (500/4500) with elevated rate
+   - C2 beacon: trickle traffic on high ports during long-duration flows
+4. Trains `RandomForestClassifier(n_estimators=200, class_weight='balanced')`
+5. Saves `random_forest.pkl + scaler.pkl + model_meta.pkl + attack_labels.pkl` directly to `phase5-backend/models/`
+
+Then commit and push the models to trigger a Render redeploy.
 
 ---
 
-## 📖 Usage Guide
-
-### 1. Upload a PCAP File
+## Running the Agent
 
 ```bash
-# Via command line
-cargo run -- \
-  --input your_vpn_traffic.pcap \
-  --output ./output
+# Install dependencies (one-time)
+pip install scapy requests
+
+# Find your WiFi interface
+networksetup -listallhardwareports  # macOS
+
+# Start streaming (auto-detects interface)
+sudo python3 argus-agent/agent.py
+
+# Or explicitly
+sudo python3 argus-agent/agent.py --iface en0
+
+# Custom BPF filter (only HTTP/HTTPS)
+sudo python3 argus-agent/agent.py --iface en0 --filter "tcp port 80 or tcp port 443"
 ```
 
-```text
-# Via web interface
-# Upload PCAP through the dashboard
-```
-
-### 2. View Security Report
-
-```bash
-cat output/security_report.txt
-```
-
-### 3. Check AI Predictions
-
-```bash
-# API endpoint
-curl http://localhost:8000/api/predictions
-```
-
-### 4. Dashboard Access
-
-```text
-Open browser: http://localhost:3000
-
-Username: admin
-Password: admin123
-```
+The agent:
+1. Wakes up the Render backend (sends a health ping, retries up to 6×)
+2. Starts capturing all IP traffic on the interface
+3. Every 8 seconds: aggregates flows, POSTs to `/api/v1/ingest`
+4. Backend runs ML inference and broadcasts results via WebSocket
+5. Dashboard updates automatically — no manual refresh needed
 
 ---
 
-## 📊 Sample Output
+## Deployment
 
-### Security Report
+### Backend (Render)
 
-```text
-============================================================
-📄 File: vpn_traffic.pcap
-📊 Total packets: 15,432
-🔐 IKE packets: 2,341
-🔒 ESP packets: 11,876
+- **Service type**: Web Service
+- **Root directory**: `phase5-backend`
+- **Build command**: `pip install -r requirements.txt`
+- **Start command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
+- **No environment variables needed**
 
-📋 Summary:
-   VPN Analysis: AES-256-GCM encryption, SHA-256 authentication, PFS: Enabled ✅
+After training a new model, commit the `.pkl` files and push — Render rebuilds automatically.
 
-🔒 CONNECTION DETAILS
-============================================================
+### Frontend (Vercel)
 
-🔗 Connection: Corporate-VPN
-   IKE Version: IKEv2
-   Encryption: AES-256-GCM
-   Authentication: SHA-256
-   DH Group: DH-2048
-   PFS Enabled: true
+- **Root directory**: `phase6-frontend`
+- **Framework**: Next.js
+- **Environment variable**:
 
-   🛡️ SECURITY ASSESSMENT:
-      Security Score: 100/100
-      Encryption: AES-256-GCM ✅
-      Authentication: SHA-256 ✅
-      💡 Recommendations:
-         - No issues found! ✅
-
-============================================================
-✅ Analysis complete!
-```
-
-### AI Prediction
-
-```json
-{
-  "timestamp": "2026-08-30T14:30:00Z",
-  "predicted_attacks": [
-    {
-      "type": "DDoS",
-      "probability": 0.85,
-      "timeframe": "24 hours",
-      "confidence": 0.92,
-      "mitigation": "Enable rate limiting"
-    },
-    {
-      "type": "VPN Exploit",
-      "probability": 0.45,
-      "timeframe": "72 hours",
-      "confidence": 0.78,
-      "mitigation": "Update to latest VPN version"
-    }
-  ]
-}
-```
+| Name | Value |
+|------|-------|
+| `NEXT_PUBLIC_API_URL` | `https://argus-backend-kbg6.onrender.com/api/v1` |
 
 ---
 
-## 🎯 Impact & Benefits
+## API Endpoints
 
-### For Organizations
-
-* Reduce breach risk by 60% through proactive security
-* Save millions in potential breach costs
-* Improve compliance with security standards
-* Automate security audits - no manual checks needed
-
-### For Security Teams
-
-* Stop chasing false alarms - AI prioritizes real threats
-* Predict attacks before they happen
-* Fix vulnerabilities before they're exploited
-* Focus on critical issues - not paperwork
-
-### For India
-
-* Strengthen cybersecurity across government agencies
-* Support Make in India with indigenous solution
-* Create jobs in cybersecurity domain
-* Protect critical infrastructure
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/v1/health` | Backend + model status |
+| `GET` | `api/v1/model-info` | Real model name, accuracy, features, training date |
+| `POST` | `/api/v1/predict` | Single packet ML classification |
+| `POST` | `/api/v1/analyze` | Full analysis with recommendations |
+| `POST` | `/api/v1/ingest` | Batch ingest from argus-agent (10 flow features each) |
+| `WS` | `/api/v1/ws` | WebSocket — frontend subscribes here for live results |
 
 ---
 
-## 👥 Team
+## Tech Stack
 
-| Role               | Name | Expertise              |
-| ------------------ | ---- | ---------------------- |
-| Team Lead          | -    | Full Stack Development |
-| Rust Developer     | -    | Systems Programming    |
-| ML Engineer        | -    | AI/ML Models           |
-| Frontend Developer | -    | Next.js/React          |
-| Security Analyst   | -    | Cybersecurity          |
-
----
-
-## 🙏 Acknowledgments
-
-* **Smart India Hackathon 2026** - Platform and opportunity
-* **National Technical Research Organisation (NTRO)** - Problem statements
-* **All India Council for Technical Education (AICTE)** - Organization
-* **Open Source Community** - Libraries and tools
+| Layer | Technology |
+|-------|-----------|
+| Packet capture | Python · scapy 2.7 |
+| ML model | scikit-learn · RandomForestClassifier |
+| Backend | Python · FastAPI · uvicorn · WebSockets |
+| Frontend | Next.js 14 · TypeScript · Recharts · Tailwind CSS |
+| AI analysis | Groq API · openai/gpt-oss-20b |
+| Deployment | Render (backend) · Vercel (frontend) |
+| VPN testbed | Docker · StrongSwan 5.9 |
+| IPsec parser | Rust · nom |
 
 ---
 
-## 📝 License
+## What the 4 Dashboard Graphs Show
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+**1. Packet Flow Stream** — Rolling area chart. Each point = one 8-second flow window. Green area = benign bytes, red area = threat bytes. X-axis scrolls with real timestamps. Updates on every new batch from the agent.
 
----
+**2. Attack Class Distribution** — Bar chart. Cumulative count of each ML-classified attack type since session start. Bars only appear when the model actually detects something. Categories: Normal, DDoS, Port Scan, VPN Exploit.
 
-## 📞 Contact
+**3. Protocol Breakdown** — Donut chart. Real proportion of TCP vs UDP vs ESP/Other flows. Only protocols with actual traffic appear. `protocol=0` (unknown/non-IP) is excluded. Updates with each new flow.
 
-For queries, reach out to:
-
-* **Email:** [sih@aicte-india.org](mailto:sih@aicte-india.org)
-* **Phone:** 011-29581222
+**4. Confidence & Latency** — Dual line chart. Green = ML model's confidence score per flow (from backend). Yellow dashed = actual API round-trip latency measured client-side. Both are real — no fake values.
 
 ---
 
-## 🏆 Why This Project Matters
+## Security Note
 
-> **"The best defense is a good offense. This platform doesn't wait for attacks - it predicts them and prevents them. That's the future of cybersecurity."**
-
----
-
-© 2025-26 Unified Cyber Defense Platform. All rights reserved.
+The capture agent reads packet **headers only** — it does not intercept payload content. It captures: source/dest IPs, ports, protocol numbers, and packet sizes. No passwords, no browsing history, no encrypted content. Raw socket capture requires `sudo` because it bypasses the OS network stack's per-application filtering — this is standard for any network monitoring tool (Wireshark, tcpdump, etc.).
