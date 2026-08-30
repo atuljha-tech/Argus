@@ -95,7 +95,7 @@ async def background_traffic_simulator():
                         "timestamp":       datetime.now().isoformat(),
                         "recommendations": _recommendations(prediction, risk_level),
                     }
-                    await manager.broadcast(payload)
+                    await manager.publish(payload)
             await asyncio.sleep(3.5)
         except Exception:
             await asyncio.sleep(4.0)

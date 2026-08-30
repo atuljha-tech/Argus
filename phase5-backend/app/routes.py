@@ -108,7 +108,7 @@ async def analyze_traffic(features: Dict[str, Any]):
             "timestamp":       datetime.now().isoformat(),
             "recommendations": _recommendations(prediction, risk_level),
         }
-        await manager.broadcast({"type": "analysis", **result})
+        await manager.publish({"type": "analysis", **result})
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
@@ -157,7 +157,7 @@ async def ingest_packets(body: IngestRequest):
             }
             results.append(result)
             # Broadcast each packet result immediately
-            await manager.broadcast(result)
+            await manager.publish(result)
 
         except Exception:
             continue  # skip malformed packets silently
@@ -175,6 +175,9 @@ async def websocket_endpoint(ws: WebSocket):
     """
     await manager.connect(ws)
     try:
+        # Replay any flows received shortly before this browser connected.
+        # This also makes a transient WebSocket reconnect recover gracefully.
+        await manager.replay(ws)
         # Send connection confirmation
         await ws.send_text(json.dumps({
             "type":    "connected",
