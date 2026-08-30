@@ -19,13 +19,13 @@ export default function Home() {
   // Dynamic Realtime Evaluation History & Live Telemetry State
   const [history, setHistory] = useState<AnalysisResponse[]>([]);
   const [liveStats, setLiveStats] = useState({
-    normalCount: 142,
-    ddosCount: 38,
-    portScanCount: 24,
-    vpnExploitCount: 12,
-    udpCount: 110,
-    tcpCount: 85,
-    otherProtoCount: 21,
+    normalCount: 0,
+    ddosCount: 0,
+    portScanCount: 0,
+    vpnExploitCount: 0,
+    udpCount: 0,
+    tcpCount: 0,
+    otherProtoCount: 0,
   });
 
   useEffect(() => {
@@ -33,57 +33,16 @@ export default function Home() {
       try {
         const data = await healthCheck();
         setHealth(data);
+        setError(null);
       } catch (err) {
-        setError('FastAPI Backend offline. Launch backend on http://localhost:8000.');
+        setHealth(null);
+        setError('FastAPI Backend offline. Unable to reach the deployed inference API.');
         console.error('Health check failed:', err);
       }
     };
     checkHealth();
     const interval = setInterval(checkHealth, 10000);
     return () => clearInterval(interval);
-  }, []);
-
-  // Periodic Live Background Telemetry Simulation Ticker (keeps charts dynamic)
-  useEffect(() => {
-    const timer = setInterval(() => {
-      const isNormal = Math.random() > 0.35;
-      const fakeLength = Math.floor(Math.random() * 1200) + 60;
-      const fakeProto = Math.random() > 0.4 ? 17 : 6;
-      
-      const newEntry: AnalysisResponse = {
-        prediction: isNormal ? 0 : 1,
-        attack_type: isNormal ? 'normal' : (Math.random() > 0.5 ? 'DDoS' : 'Port Scan'),
-        confidence: Number((0.85 + Math.random() * 0.14).toFixed(2)),
-        risk_level: isNormal ? 'LOW' : (Math.random() > 0.5 ? 'HIGH' : 'MEDIUM'),
-        features: {
-          src_port: isNormal ? 500 : 80,
-          dst_port: isNormal ? 4500 : 80,
-          protocol: fakeProto,
-          length: fakeLength,
-        },
-        timestamp: new Date().toISOString(),
-        recommendations: isNormal ? ['Traffic normal. Continual telemetry active.'] : ['Monitor traffic for anomaly escalation.']
-      };
-
-      setHistory(prev => [...prev.slice(-15), newEntry]);
-
-      // Update counters dynamically
-      setLiveStats(prev => {
-        const nextState = { ...prev };
-        if (isNormal) {
-          nextState.normalCount += 1;
-        } else {
-          if (newEntry.attack_type === 'DDoS') nextState.ddosCount += 1;
-          else nextState.portScanCount += 1;
-        }
-        if (fakeProto === 17) nextState.udpCount += 1;
-        else if (fakeProto === 6) nextState.tcpCount += 1;
-        else nextState.otherProtoCount += 1;
-        return nextState;
-      });
-    }, 4000);
-
-    return () => clearInterval(timer);
   }, []);
 
   const handlePredict = async (features: {
@@ -107,8 +66,9 @@ export default function Home() {
         if (data.prediction === 0) {
           updated.normalCount += 1;
         } else {
-          if (features.src_port === 80 || features.dst_port === 80) updated.ddosCount += 1;
-          else if (features.dst_port === 22 || features.src_port === 443) updated.portScanCount += 1;
+          const attackType = data.attack_type.toLowerCase();
+          if (attackType.includes('ddos')) updated.ddosCount += 1;
+          else if (attackType.includes('scan')) updated.portScanCount += 1;
           else updated.vpnExploitCount += 1;
         }
         if (features.protocol === 17) updated.udpCount += 1;
@@ -263,4 +223,3 @@ export default function Home() {
     </div>
   );
 }
-

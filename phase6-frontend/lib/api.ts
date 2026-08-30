@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { PredictionRequest, PredictionResponse, AnalysisResponse, HealthResponse } from '@/types';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'https://argus-backend-kbg6.onrender.com/api/v1';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

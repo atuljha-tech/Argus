@@ -47,9 +47,9 @@ export default function ThreatAnalytics({ history, liveStats, onResetStats }: Th
 
   // Dynamic Protocol Breakdown Data (Donut Chart)
   const protocolData = [
-    { name: 'UDP (17)', value: liveStats.udpCount || 1, color: '#38bdf8' },
-    { name: 'TCP (6)', value: liveStats.tcpCount || 1, color: '#a855f7' },
-    { name: 'Other/ESP', value: liveStats.otherProtoCount || 1, color: '#34d399' },
+    { name: 'UDP (17)', value: liveStats.udpCount, color: '#38bdf8' },
+    { name: 'TCP (6)', value: liveStats.tcpCount, color: '#a855f7' },
+    { name: 'Other/ESP', value: liveStats.otherProtoCount, color: '#34d399' },
   ];
 
   return (
