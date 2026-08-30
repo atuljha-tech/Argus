@@ -159,9 +159,31 @@ class ModelLoader:
         except Exception:
             confidence = 0.5
 
-        # ── Attack type ───────────────────────────────────────────────────────
-        attack_type = _classify_attack_type(features, prediction, confidence)
+        # ── Post-processing: sanity-check ML output against real thresholds ──
+        # The model may have been trained on synthetic data and over-flags
+        # normal home/office traffic. Only trust its "threat" prediction when
+        # the flow features actually look anomalous.
+        if prediction == 1:
+            pps  = float(full.get("packets_per_second", 0))
+            bps  = float(full.get("bytes_per_second",   0))
+            aps  = float(full.get("avg_packet_size",     full.get("length", 0)))
+            pkt  = float(full.get("packet_count",        1))
+            dport = int(full.get("dst_port",             0))
+            proto = int(full.get("protocol",             0))
 
+            # If no feature actually looks suspicious, override to benign
+            looks_suspicious = (
+                pps  > 200          or   # real DDoS threshold
+                bps  > 1_000_000    or   # 1 MB/s sustained
+                (pkt > 30 and aps < 80)  or   # port scan pattern
+                (dport in (500, 4500) and pps > 20) or  # VPN abuse
+                (proto == 50 and pps > 50)              # ESP flood
+            )
+            if not looks_suspicious:
+                prediction = 0
+                confidence = 1.0 - confidence   # flip confidence to benign side
+
+        # ── Attack type ───────────────────────────────────────────────────────
         return prediction, confidence, attack_type
 
     def model_info(self) -> dict:

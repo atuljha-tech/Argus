@@ -37,7 +37,7 @@ interface AISecurityAnalystProps {
 
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_KEY = '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';
-const GROQ_MODEL = 'mixtral-8x7b-32768';
+const GROQ_MODEL = 'llama-3.1-8b-instant';
 
 // ── Build stats summary from live history ─────────────────────────────────────
 function buildStats(

@@ -68,17 +68,26 @@ export default function Home() {
     setResult(null);
   };
 
-  // Score based on recent real data
+  // Score: exponentially weighted over full history — changes slowly, not per-packet
   const getSecurityScore = () => {
-    if (history.length === 0) return 100;
-    const recent = history.slice(-20);
-    const threats = recent.filter(h => h.prediction === 1).length;
-    const rate = threats / recent.length;
-    if (rate > 0.5) return 20;
-    if (rate > 0.3) return 40;
-    if (rate > 0.1) return 65;
-    if (rate > 0)   return 80;
-    return 97;
+    if (history.length < 3) return 100;
+    // Use all history but weight recent flows more
+    const total   = history.length;
+    let   wSum    = 0;
+    let   wCount  = 0;
+    history.forEach((h, i) => {
+      const w = Math.pow(1.02, i); // recent packets count slightly more
+      wSum   += h.prediction * w;
+      wCount += w;
+    });
+    const weightedThreatRate = wSum / wCount;
+    // Map to score — thresholds are realistic for home WiFi
+    if (weightedThreatRate > 0.60) return 15;
+    if (weightedThreatRate > 0.40) return 35;
+    if (weightedThreatRate > 0.20) return 55;
+    if (weightedThreatRate > 0.08) return 72;
+    if (weightedThreatRate > 0.02) return 85;
+    return 96;
   };
 
   const liveConnected = liveStatus === 'live';
