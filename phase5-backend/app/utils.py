@@ -181,35 +181,42 @@ class ModelLoader:
 
 def _classify_attack_type(features: dict, prediction: int, confidence: float) -> str:
     """
-    Rich attack classification using the same rules as capture_and_train.py.
-    Falls back to 'normal' / 'suspicious' when features are sparse.
+    Realistic attack classification for real home/office WiFi traffic.
+    Most traffic is normal — only flag with strong evidence.
     """
     if prediction == 0:
         return "benign"
 
-    pps  = features.get("packets_per_second", 0)
-    bps  = features.get("bytes_per_second",   0)
-    aps  = features.get("avg_packet_size",     features.get("length", 0))
-    pkt  = features.get("packet_count",        1)
-    dport = features.get("dst_port",           0)
-    proto = features.get("protocol",           0)
+    pps   = features.get("packets_per_second", 0)
+    bps   = features.get("bytes_per_second",   0)
+    aps   = features.get("avg_packet_size",     features.get("length", 0))
+    pkt   = features.get("packet_count",        1)
+    dport = features.get("dst_port",            0)
+    proto = features.get("protocol",            0)
+    dur   = features.get("duration",            1.0)
 
-    # DDoS — high packet rate
-    if pps > 50:
+    # DDoS — very high packet rate (>200 pps is extreme for a single flow)
+    if pps > 200:
         return "ddos"
-    # Exfiltration — high byte rate + large packets
-    if bps > 100_000 and aps > 500:
-        return "exfiltration"
-    # Port scan — many packets but tiny
-    if pkt > 20 and aps < 100:
-        return "port_scan"
-    # VPN abuse — IPsec ports at elevated rate
-    if dport in (500, 4500) or proto == 50:
-        return "vpn_exploit"
-    # C2 beacon — trickle traffic on high port
-    if pkt <= 2 and dport > 1024:
-        return "c2_beacon"
 
+    # Data exfiltration — sustained high throughput (>1 MB/s) with large packets
+    if bps > 1_000_000 and aps > 800 and dur > 2:
+        return "exfiltration"
+
+    # Port scan — many tiny packets spread across a short window
+    # (>30 packets, avg size < 80 bytes, fast rate)
+    if pkt > 30 and aps < 80 and pps > 10:
+        return "port_scan"
+
+    # VPN abuse — IPsec-specific ports with anomalous rate
+    if dport in (500, 4500) and pps > 20:
+        return "vpn_exploit"
+
+    # Raw ESP flood
+    if proto == 50 and pps > 50:
+        return "vpn_exploit"
+
+    # Default for any ML-flagged traffic that doesn't match specific patterns
     return "suspicious"
 
 

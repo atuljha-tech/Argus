@@ -41,9 +41,11 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 BACKEND_URL  = "https://argus-backend-kbg6.onrender.com/api/v1"
 INGEST_URL   = f"{BACKEND_URL}/ingest"
-FLUSH_EVERY  = 5.0          # seconds between POST batches
-WINDOW_SECS  = 5.0          # flow-aggregation window = same as flush
-MAX_BATCH    = 50           # cap packets per POST to avoid timeout
+HEALTH_URL   = f"{BACKEND_URL}/health"
+FLUSH_EVERY  = 8.0          # seconds between POST batches (longer = bigger flows)
+WINDOW_SECS  = 8.0          # flow-aggregation window = same as flush
+MAX_BATCH    = 20           # smaller batches → faster backend response
+POST_TIMEOUT = 25           # Render free tier can be slow to wake
 # ─────────────────────────────────────────────────────────────────────────────
 
 
@@ -173,29 +175,51 @@ def flush_loop(flush_every: float):
     session.headers.update({"Content-Type": "application/json"})
     print(f"📡  Flush loop → {INGEST_URL}  (every {flush_every}s)")
 
+    # Wake the backend on startup (Render free tier sleeps after 15 min)
+    print("  ⏳  Pinging backend to wake it up…")
+    for attempt in range(6):
+        try:
+            r = session.get(HEALTH_URL, timeout=15)
+            if r.status_code == 200:
+                print(f"  ✅  Backend awake: {r.json().get('status', 'ok')}")
+                break
+        except Exception as e:
+            print(f"  ⏳  Wake attempt {attempt + 1}/6: {e}")
+            time.sleep(5)
+
+    retry_delay = flush_every
+
     while True:
         time.sleep(flush_every)
         flows = aggregator.drain()
         if not flows:
             continue
 
-        # Cap batch size
-        batch  = flows[:MAX_BATCH]
-        payload = json.dumps({"packets": batch})
-
-        try:
-            r = session.post(INGEST_URL, data=payload, timeout=10)
-            if r.status_code == 200:
-                stats["sent"]  += len(batch)
-                stats["flows"] += len(batch)
-                print(f"  ✅ [{datetime.now().strftime('%H:%M:%S')}]  "
-                      f"+{len(batch)} flows  (total: {stats['sent']})")
-            else:
-                print(f"  ⚠️  Backend {r.status_code}: {r.text[:100]}")
+        # Send in smaller chunks to avoid timeout
+        for i in range(0, len(flows), MAX_BATCH):
+            batch   = flows[i : i + MAX_BATCH]
+            payload = json.dumps({"packets": batch})
+            try:
+                r = session.post(INGEST_URL, data=payload, timeout=POST_TIMEOUT)
+                if r.status_code == 200:
+                    stats["sent"]  += len(batch)
+                    stats["flows"] += len(batch)
+                    retry_delay = flush_every  # reset backoff on success
+                    print(f"  ✅ [{datetime.now().strftime('%H:%M:%S')}]  "
+                          f"+{len(batch)} flows  (total: {stats['sent']})")
+                else:
+                    print(f"  ⚠️  Backend {r.status_code}: {r.text[:80]}")
+                    stats["dropped"] += len(batch)
+            except requests.exceptions.Timeout:
+                print(f"  ⏱  Timeout — backend may be cold. "
+                      f"Retrying in {retry_delay:.0f}s…")
                 stats["dropped"] += len(batch)
-        except requests.exceptions.RequestException as exc:
-            print(f"  ❌ POST failed: {exc}")
-            stats["dropped"] += len(batch)
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 1.5, 60)  # exponential backoff, cap 60s
+            except requests.exceptions.RequestException as exc:
+                print(f"  ❌ POST failed: {exc}")
+                stats["dropped"] += len(batch)
+                time.sleep(min(retry_delay, 15))
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────

@@ -37,6 +37,7 @@ interface AISecurityAnalystProps {
 
 const GROQ_API = 'https://api.groq.com/openai/v1/chat/completions';
 const GROQ_KEY = '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';
+const GROQ_MODEL = 'mixtral-8x7b-32768';
 
 // ── Build stats summary from live history ─────────────────────────────────────
 function buildStats(
@@ -152,8 +153,9 @@ export default function AISecurityAnalyst({ history, liveStats }: AISecurityAnal
   const [response,  setResponse]  = useState('');
   const [error,     setError]     = useState('');
   const [lastStats, setLastStats] = useState<SessionStats | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const abortRef  = useRef<AbortController | null>(null);
+  const scrollRef   = useRef<HTMLDivElement>(null);
+  const abortRef    = useRef<AbortController | null>(null);
+  const analyseRef  = useRef<() => void>(() => {});
 
   // Auto-scroll as text streams in
   useEffect(() => {
@@ -189,8 +191,9 @@ export default function AISecurityAnalyst({ history, liveStats }: AISecurityAnal
           'Authorization': `Bearer ${GROQ_KEY}`,
         },
         body: JSON.stringify({
-          model:       'llama3-8b-8192',
-          temperature: 0.4,
+          model:       GROQ_MODEL,
+          temperature: 0.3,
+          max_tokens:  1500,
           stream:      true,
           messages: [
             { role: 'system', content: 'You are ARGUS, a precise network security analyst. Be concise, use real numbers, never hallucinate data.' },
@@ -236,10 +239,13 @@ export default function AISecurityAnalyst({ history, liveStats }: AISecurityAnal
     }
   }, [history, liveStats]);
 
-  // Auto-run analysis when drawer opens and we have data
+  // Keep ref in sync so the open-effect below always sees the latest analyse
+  useEffect(() => { analyseRef.current = analyse; }, [analyse]);
+
+  // Auto-run when drawer opens and we have real data
   useEffect(() => {
     if (open && history.length > 0 && !response && !loading) {
-      analyse();
+      analyseRef.current();
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
