@@ -147,9 +147,10 @@ export default function Home() {
 
   return (
     <div className="min-h-screen bg-[#030712] text-slate-100 bg-animated-cyber-blue bg-tactical-grid relative overflow-x-hidden">
-      {/* Moving Blue Cyber Atmosphere Orbs & Subtle Glitch Scanline */}
+      {/* Moving Blue Cyber Atmosphere Orbs & Dynamic Glitch Scanline Laser */}
       <div className="cyber-orb-1"></div>
       <div className="cyber-orb-2"></div>
+      <div className="cyber-orb-3"></div>
       <div className="cyber-scanline"></div>
 
       <Navbar />
