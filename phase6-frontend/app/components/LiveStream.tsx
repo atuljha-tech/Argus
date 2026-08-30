@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Wifi, WifiOff, Radio, Shield, AlertTriangle,
-  Activity, Cpu, Database, ArrowDown, ArrowUp,
+  Activity, Cpu, Database,
   Network, Hash, Clock, BarChart2,
 } from 'lucide-react';
 import { AnalysisResponse } from '@/types';
@@ -65,14 +65,16 @@ function StatusBadge({ status }: { status: LiveStatus }) {
 // ── Single packet log row ─────────────────────────────────────────────────────
 function PacketRow({ pkt }: { pkt: LivePacket }) {
   const threat = pkt.prediction === 1;
+  // Parse timestamp safely — use ISO which is locale-independent
+  const ts = new Date(pkt.timestamp).toLocaleTimeString([], {
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  });
   return (
     <div className={`grid grid-cols-[auto_1fr_1fr_auto_auto_auto_auto] items-center gap-x-3 px-3 py-1.5 rounded text-[11px] font-mono border ${
       threat ? 'border-rose-900/60 bg-rose-950/20 text-rose-300'
              : 'border-zinc-800/50 bg-zinc-950/40 text-zinc-300'}`}>
       <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${threat ? 'bg-rose-500' : 'bg-[#00ff87]'}`} />
-      <span className="text-zinc-500 truncate">
-        {new Date(pkt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-      </span>
+      <span className="text-zinc-500 truncate">{ts}</span>
       <span className="text-zinc-400 truncate">
         {pkt.src_ip ?? '—'} <span className="text-zinc-600">→</span> {pkt.dst_ip ?? '—'}
       </span>
@@ -317,12 +319,12 @@ export default function LiveStream({ onPacket, onStatusChange }: LiveStreamProps
               <thead>
                 <tr className="text-[10px] text-zinc-500 uppercase tracking-widest border-b border-zinc-800">
                   <th className="py-2 px-3 text-left font-bold">#</th>
-                  <th className="py-2 px-3 text-left font-bold flex items-center gap-1"><ArrowUp className="w-2.5 h-2.5" />Source IP</th>
+                  <th className="py-2 px-3 text-left font-bold">↑ Source IP</th>
                   <th className="py-2 px-3 text-left font-bold">Packets</th>
                   <th className="py-2 px-3 text-left font-bold">Total Size</th>
                   <th className="py-2 px-3 text-left font-bold">Threat %</th>
                   <th className="py-2 px-3 text-left font-bold">Protocols</th>
-                  <th className="py-2 px-3 text-left font-bold flex items-center gap-1"><Clock className="w-2.5 h-2.5" />Last Seen</th>
+                  <th className="py-2 px-3 text-left font-bold">⏱ Last Seen</th>
                 </tr>
               </thead>
               <tbody>

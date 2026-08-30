@@ -41,8 +41,8 @@ except ImportError:
 # ─────────────────────────────────────────────────────────────────────────────
 BACKEND_URL  = "https://argus-backend-kbg6.onrender.com/api/v1"
 INGEST_URL   = f"{BACKEND_URL}/ingest"
-FLUSH_EVERY  = 2.0          # seconds between POST batches
-WINDOW_SECS  = 2.0          # flow-aggregation window = same as flush
+FLUSH_EVERY  = 5.0          # seconds between POST batches
+WINDOW_SECS  = 5.0          # flow-aggregation window = same as flush
 MAX_BATCH    = 50           # cap packets per POST to avoid timeout
 # ─────────────────────────────────────────────────────────────────────────────
 
