@@ -129,8 +129,10 @@ export default function LiveStream({ onPacket, onStatusChange }: LiveStreamProps
   const [sourceStats,  setSrcStats]   = useState<Map<string, SourceStat>>(new Map());
   const [activeTab,    setTab]        = useState<'log' | 'stats'>('log');
 
-  const wsRef   = useRef<WebSocket | null>(null);
-  const pingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const wsRef      = useRef<WebSocket | null>(null);
+  const pingRef    = useRef<ReturnType<typeof setInterval> | null>(null);
+  const onPacketRef = useRef(onPacket);
+  useEffect(() => { onPacketRef.current = onPacket; }, [onPacket]);
 
   const updateStatus = useCallback((s: LiveStatus) => {
     setStatus(s);
@@ -171,7 +173,9 @@ export default function LiveStream({ onPacket, onStatusChange }: LiveStreamProps
 
         const bytes = data.features?.length ?? 0;
         const srcIp = data.src_ip || 'unknown';
-        const ts    = new Date(data.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const ts    = new Date(data.timestamp).toLocaleTimeString([], {
+          hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+        });
 
         setLog(prev => [pkt, ...prev].slice(0, 100));
         setCount(c  => c + 1);
@@ -194,7 +198,7 @@ export default function LiveStream({ onPacket, onStatusChange }: LiveStreamProps
           return next;
         });
 
-        onPacket(pkt);
+        onPacketRef.current(pkt);
       } catch { /* ignore malformed frames */ }
     };
 
@@ -204,7 +208,7 @@ export default function LiveStream({ onPacket, onStatusChange }: LiveStreamProps
       if (pingRef.current) clearInterval(pingRef.current);
       setTimeout(connect, 4_000);
     };
-  }, [onPacket, updateStatus]);
+  }, [updateStatus]); // onPacket intentionally excluded — using ref
 
   useEffect(() => {
     connect();
