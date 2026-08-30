@@ -1,6 +1,6 @@
 'use client';
 
-import { Shield, Activity, Cpu, Radio, Zap } from 'lucide-react';
+import { Shield, Cpu, Radio, Lock, Terminal } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 export default function Navbar() {
@@ -17,52 +17,50 @@ export default function Navbar() {
   }, []);
 
   return (
-    <header className="sticky top-0 z-50 backdrop-blur-xl bg-[#090d16]/80 border-b border-slate-800/80">
+    <header className="sticky top-0 z-50 backdrop-blur-xl bg-black/90 border-b border-zinc-800">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Logo & Branding */}
+          {/* Logo & Tactical Branding */}
           <div className="flex items-center space-x-3">
-            <div className="relative flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 p-0.5 shadow-lg shadow-blue-500/20">
-              <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
-                <Shield className="w-5 h-5 text-cyan-400" />
-              </div>
+            <div className="relative flex items-center justify-center w-10 h-10 rounded-lg bg-zinc-900 border border-zinc-700 text-emerald-400 shadow-md">
+              <Shield className="w-5 h-5" />
             </div>
             <div>
               <div className="flex items-center space-x-2">
-                <span className="text-xl font-black tracking-wider bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 bg-clip-text text-transparent">
-                  ARGUS
+                <span className="text-lg font-black font-mono tracking-widest text-white uppercase">
+                  ARGUS<span className="text-[#00ff87]">//</span>DEFENSE
                 </span>
-                <span className="px-2 py-0.5 text-[10px] font-semibold tracking-wider text-cyan-300 bg-cyan-950/80 border border-cyan-800/50 rounded-full uppercase">
-                  v1.0 SOC
+                <span className="px-2 py-0.5 text-[10px] font-mono font-bold tracking-wider text-emerald-400 bg-emerald-950/60 border border-emerald-800/80 rounded uppercase">
+                  ENTERPRISE SOC
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 font-medium hidden sm:block">
-                Unified Cyber Defense & Attack Forecasting System
+              <p className="text-[10px] text-zinc-400 font-mono hidden sm:block tracking-tight">
+                High-Assurance VPN Assessment & AI Attack Forecasting System
               </p>
             </div>
           </div>
 
-          {/* Telemetry & Badges */}
-          <div className="flex items-center space-x-3 sm:space-x-5">
-            {/* Live Clock */}
-            <div className="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-slate-900/90 border border-slate-800 text-xs font-mono text-slate-300">
-              <Radio className="w-3.5 h-3.5 text-cyan-400 animate-pulse" />
-              <span>{time || 'LIVE TELEMETRY'}</span>
+          {/* Telemetry & Status Badges */}
+          <div className="flex items-center space-x-3 sm:space-x-4 font-mono text-xs">
+            {/* UTC Clock */}
+            <div className="hidden md:flex items-center space-x-2 px-3 py-1.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-300">
+              <Radio className="w-3.5 h-3.5 text-[#00ff87] animate-pulse" />
+              <span>{time || 'TELEMETRY LIVE'}</span>
             </div>
 
-            {/* AI Engine Badge */}
-            <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-indigo-950/40 border border-indigo-800/50 text-xs text-indigo-300">
-              <Cpu className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="hidden sm:inline font-medium">DecisionTree ML Engine</span>
+            {/* AI Engine Status */}
+            <div className="flex items-center space-x-2 px-3 py-1.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-300">
+              <Cpu className="w-3.5 h-3.5 text-white" />
+              <span className="hidden sm:inline text-zinc-300 font-medium">DecisionTree v1.0</span>
             </div>
 
-            {/* Live Status Indicator */}
-            <div className="flex items-center space-x-2 px-3 py-1.5 rounded-lg bg-emerald-950/50 border border-emerald-800/50 text-xs font-medium text-emerald-400">
+            {/* Tactical Status Pill */}
+            <div className="flex items-center space-x-2 px-3 py-1.5 rounded bg-emerald-950/80 border border-emerald-600/60 text-emerald-400 font-bold">
               <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#00ff87] opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-[#00ff87]"></span>
               </span>
-              <span>DEFENSE ACTIVE</span>
+              <span>SYSTEM ON-LINE</span>
             </div>
           </div>
         </div>
@@ -70,4 +68,5 @@ export default function Navbar() {
     </header>
   );
 }
+
 

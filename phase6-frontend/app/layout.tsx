@@ -1,12 +1,20 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+const inter = Inter({ 
+  subsets: ["latin"],
+  variable: "--font-inter"
+});
+
+const jetbrainsMono = JetBrains_Mono({ 
+  subsets: ["latin"],
+  variable: "--font-mono"
+});
 
 export const metadata: Metadata = {
-  title: "Argus - Cyber Defense Platform",
-  description: "AI-powered security intelligence system",
+  title: "ARGUS // Tactical Cyber Intelligence & Defense Center",
+  description: "High-assurance VPN assessment & machine learning attack forecasting system",
 };
 
 export default function RootLayout({
@@ -15,10 +23,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body className={`${inter.className} min-h-screen bg-gradient-to-b from-gray-900 to-gray-950`}>
+    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
+      <body className="min-h-screen bg-black text-slate-100 font-sans antialiased selection:bg-emerald-500 selection:text-black">
         {children}
       </body>
     </html>
   );
 }
+
