@@ -2,9 +2,10 @@
 const nextConfig = {
   reactStrictMode: true,
   transpilePackages: ['recharts'],
-  images: {
-    unoptimized: true,
+  output: 'standalone',
+  images: { unoptimized: true },
+  env: {
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://backend:8000/api/v1',
   },
 }
-
 module.exports = nextConfig

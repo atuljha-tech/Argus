@@ -1,44 +1,31 @@
-version: "3.9"
+version: '3.8'
 
 services:
-  # ─── Phase 5: FastAPI ML Backend ──────────────────────────────────────────
   backend:
-    build:
-      context: ./phase5-backend
-      dockerfile: Dockerfile
+    build: ./phase5-backend
     container_name: argus-backend
     ports:
       - "8000:8000"
     volumes:
-      # Mount models directory so you can update models without rebuilding
-      - ./phase5-backend/models:/app/models:ro
+      - ./phase5-backend/models:/app/models
     environment:
       - PYTHONPATH=/app
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
-      interval: 15s
-      timeout: 5s
-      retries: 5
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/v1/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
-  # ─── Phase 6: Next.js SOC Dashboard Frontend ──────────────────────────────
   frontend:
-    build:
-      context: ./phase6-frontend
-      dockerfile: Dockerfile
+    build: ./phase6-frontend
     container_name: argus-frontend
     ports:
       - "3000:3000"
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
     environment:
-      # Inside Docker network, containers talk to each other by service name
       - NEXT_PUBLIC_API_URL=http://backend:8000/api/v1
-      - HOSTNAME=0.0.0.0
-      - PORT=3000
     restart: unless-stopped
-
-networks:
-  default:
-    name: argus-network
