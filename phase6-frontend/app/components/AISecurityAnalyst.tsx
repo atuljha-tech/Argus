@@ -64,9 +64,9 @@ function buildStats(
     .map(([ip, cnt]) => `${ip} (${cnt} flows)`);
 
   // Recent distinct attack types
-  const recentAttackTypes = [
-    ...new Set(history.slice(-30).map(h => h.attack_type).filter(t => t !== 'benign' && t !== 'Normal Traffic')),
-  ].slice(0, 6);
+  const recentAttackTypes = Array.from(
+    new Set(history.slice(-30).map(h => h.attack_type).filter(t => t !== 'benign' && t !== 'Normal Traffic'))
+  ).slice(0, 6);
 
   return {
     totalFlows, threatCount, benignCount, threatPct,

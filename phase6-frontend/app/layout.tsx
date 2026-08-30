@@ -4,6 +4,13 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "ARGUS // Tactical Cyber Intelligence & Defense Center",
   description: "High-assurance VPN assessment & machine learning attack forecasting system",
+  keywords: ["cybersecurity", "threat intelligence", "network monitoring", "machine learning", "ARGUS", "VPN assessment"],
+  authors: [{ name: "ARGUS Cyber Defense" }],
+  icons: {
+    icon: "/images.jpeg",
+    shortcut: "/images.jpeg",
+    apple: "/images.jpeg",
+  },
 };
 
 export default function RootLayout({

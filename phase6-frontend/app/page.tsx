@@ -54,7 +54,8 @@ export default function Home() {
       } else {
         u.vpnExploitCount += 1;
       }
-      const proto = data.features?.protocol ?? (data as Record<string, unknown>).protocol ?? 0;
+      const protoRaw = data.features?.protocol ?? ((data as unknown) as Record<string, unknown>).protocol;
+      const proto = typeof protoRaw === 'number' ? protoRaw : 0;
       if      (proto === 17) u.udpCount       += 1;
       else if (proto === 6)  u.tcpCount       += 1;
       else if (proto > 0)    u.otherProtoCount += 1;

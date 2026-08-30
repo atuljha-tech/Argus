@@ -119,7 +119,7 @@ export default function ResultsDisplay({ result }: ResultsDisplayProps) {
         </div>
       </div>
 
-        /* Feature Grid */
+      {/* Feature Grid */}
       <div className="mb-6">
         <h5 className="text-xs font-bold text-zinc-400 uppercase tracking-widest mb-3 flex items-center gap-1.5">
           <Activity className="w-3.5 h-3.5 text-[#00ff87]" />

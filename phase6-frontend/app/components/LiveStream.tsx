@@ -112,7 +112,7 @@ function SourceRow({ s, rank }: { s: SourceStat; rank: number }) {
         <span className="text-zinc-600 ml-1">({s.threats})</span>
       </td>
       <td className="py-2 px-3 text-zinc-400">
-        {[...s.proto].map(p => protoLabel(p)).join(' / ')}
+        {Array.from(s.proto).map(p => protoLabel(p)).join(' / ')}
       </td>
       <td className="py-2 px-3 text-zinc-500">{s.lastSeen}</td>
     </tr>
@@ -219,7 +219,7 @@ export default function LiveStream({ onPacket, onStatusChange }: LiveStreamProps
   }, [connect]);
 
   const threatPct  = packetCount > 0 ? Math.round((threatCount / packetCount) * 100) : 0;
-  const sortedSrcs = [...sourceStats.values()].sort((a, b) => b.packets - a.packets);
+  const sortedSrcs = Array.from(sourceStats.values()).sort((a, b) => b.packets - a.packets);
 
   return (
     <div className="tactical-panel rounded-xl border border-zinc-800 shadow-2xl overflow-hidden font-mono">
