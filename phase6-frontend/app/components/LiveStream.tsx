@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   Wifi, WifiOff, Radio, Shield, AlertTriangle,
-  Activity, Cpu, Database,
+  Activity, Database,
   Network, Hash, Clock, BarChart2,
 } from 'lucide-react';
 import { AnalysisResponse } from '@/types';
@@ -239,17 +239,13 @@ export default function LiveStream({ onPacket, onStatusChange }: LiveStreamProps
 
       {/* ── Agent offline banner ────────────────────────────────────────────── */}
       {status !== 'live' && (
-        <div className="mx-6 mt-4 rounded border border-amber-900/60 bg-amber-950/20 px-4 py-3 text-[11px] text-amber-300 space-y-1">
-          <div className="flex items-center gap-1.5 font-bold text-amber-400">
-            <Cpu className="w-3.5 h-3.5" /> AGENT NOT CONNECTED
-          </div>
-          <p>Start the local capture agent on your Mac:</p>
-          <code className="block mt-1 bg-zinc-950 rounded px-3 py-1.5 text-[#00ff87] select-all">
-            sudo python3 argus-agent/agent.py --iface en0
-          </code>
-          <p className="text-zinc-500 text-[10px]">
-            Find your interface: <code>networksetup -listallhardwareports</code>
-          </p>
+        <div className="mx-6 mt-4 rounded border border-zinc-800/60 bg-zinc-900/40 px-4 py-3 text-[11px] text-zinc-400 flex items-center gap-3">
+          <Radio className="w-4 h-4 text-zinc-600 animate-pulse flex-shrink-0" />
+          <span>
+            {status === 'connecting'
+              ? 'Connecting to live packet stream…'
+              : 'Waiting for packet stream — auto-connects when data is available.'}
+          </span>
         </div>
       )}
 
@@ -338,7 +334,7 @@ export default function LiveStream({ onPacket, onStatusChange }: LiveStreamProps
       {/* ── Footer ─────────────────────────────────────────────────────────── */}
       <div className="px-6 py-2 border-t border-zinc-800/60 flex items-center gap-2 text-[10px] text-zinc-600">
         <Shield className="w-3 h-3 text-[#00ff87]" />
-        <span>Real NIC packets · ML classification · {WS_URL}</span>
+        <span>Real NIC packets · Random Forest ML · WebSocket live stream</span>
       </div>
     </div>
   );

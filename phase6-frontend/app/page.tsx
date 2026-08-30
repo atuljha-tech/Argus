@@ -7,6 +7,7 @@ import ResultsDisplay from './components/ResultsDisplay';
 import SecurityScore from './components/SecurityScore';
 import ThreatAnalytics from './components/ThreatAnalytics';
 import LiveStream, { LiveStatus } from './components/LiveStream';
+import AISecurityAnalyst from './components/AISecurityAnalyst';
 import { healthCheck } from '../lib/api';
 import { AnalysisResponse, HealthResponse } from '../types';
 
@@ -119,10 +120,7 @@ export default function Home() {
                 Real WiFi packets captured from your NIC → 10-feature flow extraction →
                 Random Forest ML classification → WebSocket → live dashboard.
                 {!liveConnected && (
-                  <span className="text-amber-400"> Run{' '}
-                    <code className="text-[#00ff87]">sudo python3 argus-agent/agent.py</code>
-                    {' '}to start streaming.
-                  </span>
+                  <span className="text-zinc-500"> Auto-connecting to live stream…</span>
                 )}
               </p>
             </div>
@@ -182,6 +180,9 @@ export default function Home() {
           <div>Real NIC · scapy · Random Forest · FastAPI · WebSocket · Next.js</div>
         </footer>
       </main>
+
+      {/* AI Security Analyst — floating, always available */}
+      <AISecurityAnalyst history={history} liveStats={liveStats} />
     </div>
   );
 }
