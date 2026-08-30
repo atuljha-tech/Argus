@@ -138,12 +138,12 @@ export default function Home() {
                   <div className="flex items-center space-x-2 overflow-x-auto">
                     <span className="text-emerald-400 font-bold">$</span>
                     <code className="text-slate-200 select-all font-semibold">
-                      curl -sSL https://raw.githubusercontent.com/atuljha-tech/Argus/main/argus-agent/agent.py | sudo python3 -
+                      curl -sSL https://raw.githubusercontent.com/atuljha-tech/Argus/main/argus-agent/agent.py -o agent.py && sudo python3 agent.py
                     </code>
                   </div>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText('curl -sSL https://raw.githubusercontent.com/atuljha-tech/Argus/main/argus-agent/agent.py | sudo python3 -');
+                      navigator.clipboard.writeText('curl -sSL https://raw.githubusercontent.com/atuljha-tech/Argus/main/argus-agent/agent.py -o agent.py && sudo python3 agent.py');
                       const btn = document.getElementById('copy-cmd-btn');
                       if (btn) btn.innerText = 'COPIED! ✓';
                       setTimeout(() => { if (btn) btn.innerText = 'COPY COMMAND 📋'; }, 2000);
@@ -156,7 +156,7 @@ export default function Home() {
                 </div>
                 <div className="text-[10px] text-zinc-500 font-mono mt-1.5 flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Copy & paste command into terminal on any Mac/Linux laptop to stream real WiFi interface packets live.</span>
+                  <span>Run this single command on any Mac/Linux laptop to stream real WiFi interface packets live.</span>
                 </div>
               </div>
             </div>
