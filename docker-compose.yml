@@ -1,7 +1,7 @@
-version: '3.8'
+version: "3.9"
 
 services:
-  # Backend API (Phase 5)
+  # ─── Phase 5: FastAPI ML Backend ──────────────────────────────────────────
   backend:
     build:
       context: ./phase5-backend
@@ -10,12 +10,18 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./phase5-backend/models:/app/models
+      # Mount models directory so you can update models without rebuilding
+      - ./phase5-backend/models:/app/models:ro
     environment:
       - PYTHONPATH=/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
-  # Frontend (Phase 6)
+  # ─── Phase 6: Next.js SOC Dashboard Frontend ──────────────────────────────
   frontend:
     build:
       context: ./phase6-frontend
@@ -24,16 +30,15 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     environment:
+      # Inside Docker network, containers talk to each other by service name
       - NEXT_PUBLIC_API_URL=http://backend:8000/api/v1
+      - HOSTNAME=0.0.0.0
+      - PORT=3000
     restart: unless-stopped
 
-  # VPN Testbed (Phase 1) - Optional
-  vpn-server:
-    build:
-      context: ./phase1-vpn-testbed/docker/strongswan
-    container_name: argus-vpn-server
-    privileged: true
-    network_mode: host
-    restart: unless-stopped
+networks:
+  default:
+    name: argus-network
