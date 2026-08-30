@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # Backend API (Phase 5)
+  backend:
+    build:
+      context: ./phase5-backend
+      dockerfile: Dockerfile
+    container_name: argus-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./phase5-backend/models:/app/models
+    environment:
+      - PYTHONPATH=/app
+    restart: unless-stopped
+
+  # Frontend (Phase 6)
+  frontend:
+    build:
+      context: ./phase6-frontend
+      dockerfile: Dockerfile
+    container_name: argus-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8000/api/v1
+    restart: unless-stopped
+
+  # VPN Testbed (Phase 1) - Optional
+  vpn-server:
+    build:
+      context: ./phase1-vpn-testbed/docker/strongswan
+    container_name: argus-vpn-server
+    privileged: true
+    network_mode: host
+    restart: unless-stopped
