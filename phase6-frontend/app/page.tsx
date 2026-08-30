@@ -130,10 +130,35 @@ export default function Home() {
               <p className="text-xs text-zinc-400 font-mono leading-relaxed">
                 Real WiFi packets captured from your NIC → 10-feature flow extraction →
                 Random Forest ML classification → WebSocket → live dashboard.
-                {!liveConnected && (
-                  <span className="text-zinc-500"> Auto-connecting to live stream…</span>
-                )}
               </p>
+
+              {/* 1-Click Terminal Agent Command Box */}
+              <div className="pt-2">
+                <div className="bg-black/80 border border-emerald-500/40 hover:border-emerald-400 rounded-lg p-3 font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-lg group">
+                  <div className="flex items-center space-x-2 overflow-x-auto">
+                    <span className="text-emerald-400 font-bold">$</span>
+                    <code className="text-slate-200 select-all font-semibold">
+                      curl -sSL https://raw.githubusercontent.com/atuljha-tech/Argus/main/argus-agent/agent.py | sudo python3 -
+                    </code>
+                  </div>
+                  <button
+                    onClick={() => {
+                      navigator.clipboard.writeText('curl -sSL https://raw.githubusercontent.com/atuljha-tech/Argus/main/argus-agent/agent.py | sudo python3 -');
+                      const btn = document.getElementById('copy-cmd-btn');
+                      if (btn) btn.innerText = 'COPIED! ✓';
+                      setTimeout(() => { if (btn) btn.innerText = 'COPY COMMAND 📋'; }, 2000);
+                    }}
+                    id="copy-cmd-btn"
+                    className="flex-shrink-0 px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-[#00ff87] border border-emerald-500/50 rounded font-bold transition-all text-[11px] tracking-wider active:scale-95"
+                  >
+                    COPY COMMAND 📋
+                  </button>
+                </div>
+                <div className="text-[10px] text-zinc-500 font-mono mt-1.5 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Copy & paste command into terminal on any Mac/Linux laptop to stream real WiFi interface packets live.</span>
+                </div>
+              </div>
             </div>
 
             {/* Live status HUD */}
