@@ -122,56 +122,60 @@ class ModelLoader:
         length      = features.get("length", 0)
         pkt_count   = features.get("packet_count", 1)
         byte_count  = features.get("byte_count", length)
-        duration    = features.get("duration", 1.0)
+        duration    = max(float(features.get("duration", 1.0)), 0.001)
 
         derived = {
             "packet_count":       pkt_count,
             "byte_count":         byte_count,
             "duration":           duration,
-            "avg_packet_size":    byte_count / max(pkt_count, 1),
-            "bytes_per_second":   byte_count / max(duration,  0.001),
-            "packets_per_second": pkt_count  / max(duration,  0.001),
+            "avg_packet_size":    byte_count / max(int(pkt_count) if pkt_count is not None else 1, 1),
+            "bytes_per_second":   byte_count / duration,
+            "packets_per_second": (int(pkt_count) if pkt_count is not None else 1) / duration,
         }
         full = {**derived, **features}   # features override derived defaults
 
-        # ── Build feature vector in training order ────────────────────────────
+        # ── Build feature vector in training order ───────────────────────────
         n_expected = (
-            self.scaler.n_features_in_
+            int(self.scaler.n_features_in_)
             if self.scaler is not None and hasattr(self.scaler, "n_features_in_")
             else len(self.feature_cols)
         )
+        # Cap feature cols to what the scaler/model actually expects
         cols_to_use = self.feature_cols[:n_expected]
-        vec = np.array([float(full.get(c, 0)) for c in cols_to_use]).reshape(1, -1)
+        if len(cols_to_use) < n_expected:
+            # Pad with synthetic column names (the FEATURE_COLS set is complete
+            # for our 10-feature schema but guard against corrupt meta.pkl)
+            cols_to_use = cols_to_use + FEATURE_COLS[len(cols_to_use):n_expected]
+        cols_to_use = cols_to_use[:n_expected]
+        raw_values = [float(full.get(c, 0) or 0) for c in cols_to_use]
+        vec = np.array(raw_values, dtype=np.float64).reshape(1, -1)
 
         # ── Scale ─────────────────────────────────────────────────────────────
         if self.scaler is not None:
             try:
                 vec = self.scaler.transform(vec)
             except Exception as e:
-                print(f"⚠️  Scaler transform failed ({e}) — using raw features")
+                print(f"⚠️  Scaler transform failed ({e}) — using raw features", flush=True)
 
         # ── Predict ───────────────────────────────────────────────────────────
-        prediction = int(self.model.predict(vec)[0])
+        pred_raw = self.model.predict(vec)
+        prediction = int(np.asarray(pred_raw).reshape(-1)[0])
 
         try:
-            proba      = self.model.predict_proba(vec)[0]
-            confidence = float(max(proba))
+            proba = np.asarray(self.model.predict_proba(vec)).reshape(-1)
+            confidence = float(max(proba.tolist() + [0.5]))
         except Exception:
             confidence = 0.5
 
         # ── Post-processing: sanity-check ML output against real thresholds ──
-        # The model may have been trained on synthetic data and over-flags
-        # normal home/office traffic. Only trust its "threat" prediction when
-        # the flow features actually look anomalous.
         if prediction == 1:
-            pps  = float(full.get("packets_per_second", 0))
-            bps  = float(full.get("bytes_per_second",   0))
-            aps  = float(full.get("avg_packet_size",     full.get("length", 0)))
-            pkt  = float(full.get("packet_count",        1))
-            dport = int(full.get("dst_port",             0))
-            proto = int(full.get("protocol",             0))
+            pps  = float(full.get("packets_per_second", 0) or 0)
+            bps  = float(full.get("bytes_per_second",   0) or 0)
+            aps  = float(full.get("avg_packet_size",     full.get("length", 0) or 0))
+            pkt  = float(full.get("packet_count",        1) or 1)
+            dport = int(full.get("dst_port",             0) or 0)
+            proto = int(full.get("protocol",             0) or 0)
 
-            # If no feature actually looks suspicious, override to benign
             looks_suspicious = (
                 pps  > 200          or   # real DDoS threshold
                 bps  > 1_000_000    or   # 1 MB/s sustained
@@ -181,9 +185,18 @@ class ModelLoader:
             )
             if not looks_suspicious:
                 prediction = 0
-                confidence = 1.0 - confidence   # flip confidence to benign side
+                confidence = 1.0 - confidence   # flip to benign side (clamped below)
+
+        confidence = max(0.0, min(1.0, float(confidence)))
 
         # ── Attack type ───────────────────────────────────────────────────────
+        # FIX: attack_type was undefined — call classifier helper.
+        try:
+            attack_type = _classify_attack_type(full, prediction, confidence)
+        except Exception as exc:
+            print(f"⚠️  classify attack_type failed ({exc}); falling back", flush=True)
+            attack_type = "benign" if prediction == 0 else "suspicious"
+
         return prediction, confidence, attack_type
 
     def model_info(self) -> dict:
