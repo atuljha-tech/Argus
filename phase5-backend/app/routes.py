@@ -78,32 +78,30 @@ async def get_recent_packets(
     """
     HTTP fallback for live packet delivery.
 
-    Frontend short-polls this endpoint every few seconds as a safety net:
-      * if Render's proxy routes the WebSocket and the agent POST to
-        different worker processes (so the in-memory broadcast is missed)
-      * if a transient proxy / network drop temporarily stops WebSocket frames
+    READS FROM THE SHARED DISK STORE — all Render worker processes see the
+    same packet history regardless of which process accepted the agent's
+    /ingest POST.
 
     The response includes a `next_since` cursor so clients can poll incrementally
     without re-processing the same flows.
     """
-    snap = manager.snapshot()
-    records: List[dict] = []
-    newest_ts = since
-    for pkt in snap:
-        if since is None or (pkt.get("timestamp") or "") > since:
-            records.append(pkt)
-            ts = pkt.get("timestamp")
-            if ts and (newest_ts is None or ts > newest_ts):
-                newest_ts = ts
-    records = records[-limit:]
+    records, newest_ts = manager.snapshot(limit=limit, since=since)
+    # snapshot returns records already filtered by `since` and capped to `limit`
+    total_on_disk = 0
+    try:
+        from .packet_store import buffer_size as disk_buffer_size
+        total_on_disk = disk_buffer_size()
+    except Exception:
+        pass
     _log(
         f"GET /recent  limit={limit}  since={since!r}  "
-        f"returned={len(records)}  buffer_size={len(snap)}"
+        f"returned={len(records)}  disk_buffer_size={total_on_disk}  "
+        f"next_since={newest_ts}"
     )
     return {
         "packets": records,
         "returned": len(records),
-        "buffer_size": len(snap),
+        "buffer_size": total_on_disk,
         "next_since": newest_ts,
         "server_time": datetime.now().isoformat(),
     }
@@ -146,7 +144,9 @@ async def analyze_traffic(features: Dict[str, Any]):
         }
         prediction, confidence, attack_type = model_loader.predict(feature_data)
         risk_level  = get_risk_level(prediction, confidence)
+        typed = {"type": "analysis"}
         result = {
+            **typed,
             "prediction":      int(prediction),
             "attack_type":     get_attack_display(attack_type),
             "confidence":      confidence,
@@ -155,8 +155,10 @@ async def analyze_traffic(features: Dict[str, Any]):
             "timestamp":       datetime.now().isoformat(),
             "recommendations": _recommendations(prediction, risk_level),
         }
-        await manager.publish({"type": "analysis", **result})
-        return result
+        await manager.publish(result)
+        # Strip the internal `type` tag from the HTTP response (keeps schema identical).
+        response_payload = {k: v for k, v in result.items() if k != "type"}
+        return response_payload
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis error: {str(e)}")
 
@@ -173,7 +175,7 @@ async def ingest_packets(body: IngestRequest):
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     received_n = len(body.packets) if body.packets else 0
-    results = []
+    results: List[dict] = []
     for pkt in body.packets:
         try:
             features = {
@@ -204,16 +206,25 @@ async def ingest_packets(body: IngestRequest):
                 "recommendations": _recommendations(prediction, risk_level),
             }
             results.append(result)
-            await manager.publish(result)
 
         except Exception as exc:
             _log(f"INGEST: skipping malformed packet: {exc}")
             continue
 
+    # ── BULK persist + broadcast (one fsync per POST instead of per packet) ─
+    if results:
+        await manager.publish_batch(results)
     threats = sum(1 for r in results if r.get("prediction") == 1)
+    disk_count = 0
+    try:
+        from .packet_store import buffer_size as disk_buffer_size
+        disk_count = disk_buffer_size()
+    except Exception:
+        pass
     _log(
         f"POST /ingest  received={received_n}  processed={len(results)}  "
-        f"threats={threats}  buffer_after={len(manager.recent)}"
+        f"threats={threats}  disk_buffer={disk_count}  "
+        f"active_ws_this_proc={len(manager.active)}"
     )
     return {"processed": len(results), "timestamp": datetime.now().isoformat()}
 

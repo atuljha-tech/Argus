@@ -55,7 +55,8 @@ app.include_router(router, prefix="/api/v1")
 from .ws_manager import manager
 from .routes import model_loader, model_loaded, get_risk_level, get_attack_display, _recommendations
 
-_log(f"FastAPI app created  model_loaded={model_loaded}")
+from .packet_store import STORE_PATH as _STORE_PATH
+_log(f"FastAPI app created  model_loaded={model_loaded}  packet_store={_STORE_PATH}")
 
 
 async def background_traffic_simulator():

@@ -4,9 +4,17 @@ WebSocket Connection Manager
 Keeps track of all connected frontend clients and broadcasts
 analysed packet results to all of them simultaneously.
 
-Also exposes the in-memory replay buffer over HTTP via a /recent endpoint
-so frontends can fall back to short-polling when WebSocket delivery is
-unreliable (multi-worker PaaS deployments, proxies, etc).
+SHARED STATE (critical for Render / multi-worker deployments):
+  * The RECENT PACKET BUFFER now lives in a disk-backed JSONL file via
+    packet_store.py.  All processes in the same deployment share one
+    filesystem, so:
+       - /ingest on Worker A writes packets → /recent + WS replay on Worker B
+         can immediately read them back.
+       - This fixes the original "buffer_size=0 even though agent posted 372
+         flows" symptom.
+  * The ACTIVE WS CLIENT set remains per-process (WebSocket connections are
+    per-process by definition), which is fine — each worker broadcasts the
+    packets it reads from disk to its own connected clients.
 """
 
 import asyncio
@@ -16,19 +24,36 @@ from collections import deque
 from typing import Deque, Set, List
 from fastapi import WebSocket
 
+from .packet_store import (
+    append_packet,
+    append_many,
+    read_tail,
+    buffer_size as disk_buffer_size,
+    ensure_gc_thread,
+    STORE_PATH,
+)
+
 
 def _log(msg: str) -> None:
     """Structured stderr log — visible in Render dashboard logs."""
     print(f"[WS_MGR] {msg}", file=sys.stderr, flush=True)
 
 
+# Start the disk-store GC thread exactly once per Python process.
+ensure_gc_thread()
+
+
 class ConnectionManager:
     def __init__(self):
         self.active: Set[WebSocket] = set()
-        # Longer replay window — sufficient for short polling to catch up
-        self.recent: Deque[dict] = deque(maxlen=500)
+        # Smaller in-memory deque — now just a hint/quick cache.
+        # The authoritative shared buffer is packet_store (disk JSONL).
+        self.recent: Deque[dict] = deque(maxlen=100)
         self._lock = asyncio.Lock()
-        _log("ConnectionManager singleton initialised in this process")
+        _log(
+            "ConnectionManager singleton initialised in this process.  "
+            f"Shared packet store file: {STORE_PATH}"
+        )
 
     async def connect(self, ws: WebSocket):
         await ws.accept()
@@ -42,61 +67,71 @@ class ConnectionManager:
         _log(f"WebSocket DISCONNECTED  active={len(self.active)}")
 
     async def publish(self, data: dict):
-        """Store a live result and deliver it to every connected frontend."""
+        """Persist to shared disk store + in-memory deque + broadcast."""
+        # ── Write to SHARED disk store FIRST so ALL processes see it ────────
+        append_packet(data)
+        # Keep the small per-process deque consistent too (used for broadcast
+        # hot-path on the same process — WS replay & /recent prefer disk).
         async with self._lock:
             self.recent.append(data)
-            buffered = len(self.recent)
         n = await self.broadcast(data)
+        total_on_disk = disk_buffer_size()
         _log(
             f"PUBLISH type={data.get('type')} prediction={data.get('prediction')} "
-            f"buffered={buffered}  broadcast_to={n}"
+            f"disk_buffer_size={total_on_disk}  ws_broadcast_to={n}"
         )
 
-    def snapshot(self) -> List[dict]:
-        """
-        Recent-packet snapshot for the HTTP /recent fallback.
+    async def publish_batch(self, data_list: List[dict]):
+        """Bulk version of publish — one fsync instead of many.  Used by /ingest."""
+        if not data_list:
+            return 0
+        # SHARED disk write (bulk)
+        append_many(data_list)
+        async with self._lock:
+            for d in data_list:
+                self.recent.append(d)
+        # Broadcast each individually to WS clients on THIS process.
+        sent_any = 0
+        if self.active:
+            for d in data_list:
+                sent_any += await self.broadcast(d)
+        total_on_disk = disk_buffer_size()
+        _log(
+            f"PUBLISH_BATCH count={len(data_list)}  disk_buffer_size={total_on_disk}  "
+            f"ws_attempted={sent_any}  active_ws={len(self.active)}"
+        )
+        return len(data_list)
 
-        Note on thread-safety:
-          * This is always called inside FastAPI request handlers (which run in
-            the same single event-loop thread as everything else when
-            --workers 1).
-          * CPython's GIL makes list(deque) and dict value reads atomic for
-            our shape (no in-place mutation of stored dicts after append).
-          * For belt-and-braces we still take the lock if the caller is NOT in
-            a running async task (can't await a lock inside an async def that
-            already holds no awaitable context).
+    def snapshot(self, limit: int = 500, since: str | None = None) -> tuple[List[dict], str | None]:
         """
-        try:
-            asyncio.get_running_loop()
-            # Inside async handler — use lock via concurrent-safe shallow copy.
-            # Lock acquisition is serialized by the GIL event loop; iteration
-            # over the deque while the publish coroutine is parked between
-            # awaits is safe because only append-right (past our iterator)
-            # happens during publish.  A second append during iteration could
-            # extend the deque but that's fine — we just won't see it in this
-            # snapshot, matching the "best-effort recent" contract.
-            return list(self.recent)
-        except RuntimeError:
-            # Synchronous caller — grab the lock explicitly.
-            with self._lock:
-                return list(self.recent)
+        Shared-state snapshot for HTTP /recent fallback AND WS replay.
+
+        Reads FROM DISK, so all Render worker processes see the same data
+        regardless of which /ingest process originally persisted it.
+
+        Returns (packets, newest_timestamp).
+        """
+        pkts, newest = read_tail(limit=limit, since=since)
+        return pkts, newest
 
     async def replay(self, ws: WebSocket):
-        """Send the current replay window to one newly connected client."""
-        async with self._lock:
-            snapshot = list(self.recent)
-        _log(f"REPLAY {len(snapshot)} buffered packets to new client")
-        for data in snapshot:
+        """
+        Replay shared recent buffer to a newly connected WS client.
+        Reads FROM DISK so clients connecting to any worker get the full
+        history, not just packets posted to that specific process.
+        """
+        pkts, _ = read_tail(limit=500)
+        _log(f"REPLAY (disk) {len(pkts)} packets to new client")
+        for data in pkts:
             try:
                 await ws.send_text(json.dumps(data))
             except Exception:
                 break
 
     async def broadcast(self, data: dict) -> int:
-        """Send an already-persisted message to every connected frontend.
-        Returns the number of websockets the message was attempted to."""
+        """Send one message to every WS client connected to THIS process.
+        Returns number of send attempts."""
         if not self.active:
-            _log("broadcast SKIPPED — no active websockets in this process")
             return 0
         message = json.dumps(data)
         dead: Set[WebSocket] = set()
