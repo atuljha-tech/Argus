@@ -5,10 +5,11 @@ API Routes
 
 import asyncio
 import json
+import sys
 from datetime import datetime
 from typing import Dict, Any, List
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Query
 from pydantic import BaseModel
 
 from .models import (
@@ -19,10 +20,17 @@ from .models import (
 from .utils import ModelLoader, get_risk_level, get_attack_display
 from .ws_manager import manager
 
+
+def _log(msg: str) -> None:
+    """Structured stderr log — visible in Render dashboard."""
+    print(f"[ROUTES] {msg}", file=sys.stderr, flush=True)
+
+
 # ── Router & model ────────────────────────────────────────────────────────────
 router = APIRouter()
 model_loader = ModelLoader()
 model_loaded = model_loader.load_models()
+_log(f"Router initialised  model_loaded={model_loaded}")
 
 
 # ── Pydantic models for ingest ────────────────────────────────────────────────
@@ -60,6 +68,45 @@ async def health_check():
 async def model_info():
     """Returns metadata about the currently loaded ML model."""
     return model_loader.model_info()
+
+
+@router.get("/recent")
+async def get_recent_packets(
+    limit: int = Query(default=100, ge=1, le=500),
+    since: str | None = Query(default=None, description="ISO timestamp — only return packets newer than this"),
+):
+    """
+    HTTP fallback for live packet delivery.
+
+    Frontend short-polls this endpoint every few seconds as a safety net:
+      * if Render's proxy routes the WebSocket and the agent POST to
+        different worker processes (so the in-memory broadcast is missed)
+      * if a transient proxy / network drop temporarily stops WebSocket frames
+
+    The response includes a `next_since` cursor so clients can poll incrementally
+    without re-processing the same flows.
+    """
+    snap = manager.snapshot()
+    records: List[dict] = []
+    newest_ts = since
+    for pkt in snap:
+        if since is None or (pkt.get("timestamp") or "") > since:
+            records.append(pkt)
+            ts = pkt.get("timestamp")
+            if ts and (newest_ts is None or ts > newest_ts):
+                newest_ts = ts
+    records = records[-limit:]
+    _log(
+        f"GET /recent  limit={limit}  since={since!r}  "
+        f"returned={len(records)}  buffer_size={len(snap)}"
+    )
+    return {
+        "packets": records,
+        "returned": len(records),
+        "buffer_size": len(snap),
+        "next_since": newest_ts,
+        "server_time": datetime.now().isoformat(),
+    }
 
 
 @router.post("/predict", response_model=PredictionResponse)
@@ -125,6 +172,7 @@ async def ingest_packets(body: IngestRequest):
     if not model_loaded:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
+    received_n = len(body.packets) if body.packets else 0
     results = []
     for pkt in body.packets:
         try:
@@ -156,12 +204,17 @@ async def ingest_packets(body: IngestRequest):
                 "recommendations": _recommendations(prediction, risk_level),
             }
             results.append(result)
-            # Broadcast each packet result immediately
             await manager.publish(result)
 
-        except Exception:
-            continue  # skip malformed packets silently
+        except Exception as exc:
+            _log(f"INGEST: skipping malformed packet: {exc}")
+            continue
 
+    threats = sum(1 for r in results if r.get("prediction") == 1)
+    _log(
+        f"POST /ingest  received={received_n}  processed={len(results)}  "
+        f"threats={threats}  buffer_after={len(manager.recent)}"
+    )
     return {"processed": len(results), "timestamp": datetime.now().isoformat()}
 
 
@@ -174,6 +227,7 @@ async def websocket_endpoint(ws: WebSocket):
     Also accepts { type: 'ping' } from the client to keep alive.
     """
     await manager.connect(ws)
+    _log(f"WS /ws upgrade accepted — client={ws.client}  headers={dict(ws.headers)[:80] if False else ''}")
     try:
         # Replay any flows received shortly before this browser connected.
         # This also makes a transient WebSocket reconnect recover gracefully.
@@ -184,15 +238,21 @@ async def websocket_endpoint(ws: WebSocket):
             "message": "ARGUS live stream active",
             "timestamp": datetime.now().isoformat(),
         }))
+        _log("WS handshake complete — sent 'connected' frame to client")
         # Keep socket open, handle any client messages (ping / close)
         while True:
             data = await ws.receive_text()
-            msg = json.loads(data)
+            try:
+                msg = json.loads(data)
+            except Exception:
+                continue
             if msg.get("type") == "ping":
                 await ws.send_text(json.dumps({"type": "pong"}))
     except WebSocketDisconnect:
+        _log("WS clean WebSocketDisconnect")
         await manager.disconnect(ws)
-    except Exception:
+    except Exception as exc:
+        _log(f"WS exception: {type(exc).__name__}: {exc}")
         await manager.disconnect(ws)
 
 

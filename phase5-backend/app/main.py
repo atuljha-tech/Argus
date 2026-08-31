@@ -1,13 +1,36 @@
 #!/usr/bin/env python3
 """
 FastAPI Main Application
+
+CRITICAL NOTE ON DEPLOYMENT (Render / any multi-worker PaaS):
+  The in-memory ConnectionManager holds WebSocket connections and the
+  recent-packet replay buffer *per-process*.  If uvicorn is started with
+  --workers > 1 or Render spins up multiple processes, an agent POST to
+  worker A will NOT broadcast to a WebSocket connected to worker B.
+
+  Mitigations in this codebase:
+   1. Dockerfile CMD is uvicorn with EXPLICIT --workers 1
+   2. Frontend short-polls /api/v1/recent every 3 s as a fallback, so even
+      on the unlucky (WS on proc A, POST + recent on proc B) case the data
+      still appears within one poll interval when proc B gets hit.
 """
+
+import asyncio
+import json
+import random
+import sys
+from datetime import datetime
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from .routes import router
+
+
+def _log(msg: str) -> None:
+    print(f"[MAIN]   {msg}", file=sys.stderr, flush=True)
+
 
 # Initialize app
 app = FastAPI(
@@ -16,29 +39,31 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware (allow frontend to talk to backend)
+# CORS middleware (allow frontend to talk to backend, incl. WebSocket upgrades)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production, restrict this
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Include routes
 app.include_router(router, prefix="/api/v1")
 
-import asyncio
-import random
-from datetime import datetime
 from .ws_manager import manager
 from .routes import model_loader, model_loaded, get_risk_level, get_attack_display, _recommendations
+
+_log(f"FastAPI app created  model_loaded={model_loaded}")
+
 
 async def background_traffic_simulator():
     """
     Simulates background network telemetry traffic whenever anyone opens the deployed dashboard.
     If a real local agent (argus-agent) is running, it streams alongside or fills in when inactive.
     """
+    _log("background_traffic_simulator: starting (waits 2s before first tick)")
     await asyncio.sleep(2)
     sample_ips = [
         ("192.168.1.104", "142.250.190.46"),
@@ -56,10 +81,13 @@ async def background_traffic_simulator():
         {"src_port": 500,   "dst_port": 4500, "protocol": 17, "length": 320,  "packet_count": 45,  "byte_count": 14400, "duration": 4.0, "attack_hint": "VPN Exploit Attempt"},
     ]
 
+    ticks = 0
     while True:
         try:
+            ticks += 1
+            n_active = len(manager.active)
             # Only generate background telemetry if there are connected WebSocket clients
-            if len(manager.active) > 0:
+            if n_active > 0:
                 is_attack = random.random() < 0.25
                 if is_attack:
                     sample = random.choice([a for a in attack_samples if a["attack_hint"] != "benign"])
@@ -96,13 +124,23 @@ async def background_traffic_simulator():
                         "recommendations": _recommendations(prediction, risk_level),
                     }
                     await manager.publish(payload)
+                _log(
+                    f"SIM tick={ticks}  active_ws={n_active}  "
+                    f"attack={is_attack}  hint={sample['attack_hint']}"
+                )
+            else:
+                if ticks % 10 == 1:
+                    _log(f"SIM tick={ticks}  SKIP — no active WS clients connected to this process")
             await asyncio.sleep(3.5)
-        except Exception:
+        except Exception as exc:
+            _log(f"SIM tick={ticks}  EXCEPTION: {type(exc).__name__}: {exc}")
             await asyncio.sleep(4.0)
 
 @app.on_event("startup")
 async def startup_event():
+    _log("startup_event: creating background_traffic_simulator task")
     asyncio.create_task(background_traffic_simulator())
+    _log("startup_event: task scheduled")
 
 @app.get("/")
 async def root():
